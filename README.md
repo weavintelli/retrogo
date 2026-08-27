@@ -41,6 +41,15 @@ go build .
 
 `web/dist` is git-ignored (only `.gitkeep` is committed), so always run the frontend build before `go build` — in Docker, do it in an `oven/bun` stage.
 
+## Release
+
+`.github/workflows/release.yml` builds and pushes `ghcr.io/<owner>/<repo>` via the multi-stage `Dockerfile` (`oven/bun` stage for the frontend, `golang` stage for the binary):
+
+- push `main` → `latest` and `latest-<short_sha>`
+- push a git tag → that tag
+
+Note: the bun stage mirrors the repo layout (`WORKDIR /repo/web`, `COPY *.go /repo/`) because `main.css`'s Tailwind `@source "../../../*.go"` resolves relative to the CSS file — without the Go files next to `web/`, the glob lands on the container root and the build hangs scanning the whole filesystem.
+
 ## Adding a page
 
 1. Add a route in `server.go`, e.g. `mux.HandleFunc("GET /about", s.handleAbout)`.
