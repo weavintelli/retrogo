@@ -1,11 +1,11 @@
 # retrogo
 
-A GitHub template that bundles multiple TypeScript entrypoints and Tailwind CSS with Bun, then serves the hashed assets through classic Go `html/template` and `net/http`.
+A GitHub template that bundles multiple TypeScript entrypoints and Tailwind CSS with esbuild, then serves the hashed assets through classic Go `html/template` and `net/http`.
 
 Retro on the server, modern in the build:
 
 - **std `net/http` only** — Go 1.22+ pattern routing (`GET /{$}`, `GET /static/`, `{id}` wildcards), security headers, graceful shutdown with no deadline. No web framework, no router dependency.
-- **Bun multi-entry build** — every `.ts` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` (`Bun.build`, IIFE, minified) into `web/dist/<name>-<hash>.<ext>`. `main.css` is a full Tailwind v4 build (`bun-plugin-tailwind`) with build-time lucide icons via `@iconify/tailwind4`.
+- **esbuild multi-entry build** — every `.ts` / `.tsx` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` into `web/dist/<name>-<hash>.<ext>`. Script entries are minified IIFEs. `main.css` is compiled by the official Tailwind v4 PostCSS plugin, including build-time lucide icons via `@iconify/tailwind4`. Interactive pieces are Preact islands mounted into the Go templates. Bun installs dependencies and runs the script.
 - **`html/template` views** — embedded with `//go:embed`, referencing bundles only by entry name: `{{cssAsset "main"}}`, `{{jsAsset "home"}}`. Hash resolution happens in `web_static.go`.
 - **Immutable static serving** — `web/dist` is embedded (`//go:embed all:web/dist`) and served at `GET /static/` with `Cache-Control: public, max-age=31536000, immutable`, so hashed assets are cached forever and new builds get new URLs.
 
@@ -17,8 +17,9 @@ Retro on the server, modern in the build:
 | `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
 | `web_tmpl.go` | `//go:embed web/view/*.html`, template funcs `jsAsset` / `cssAsset` |
 | `web_static.go` | `//go:embed all:web/dist`, `<entry>-<hash>.<ext>` matching, `/static/` handler |
-| `web/build.ts` | Bun build: bundles every entry in `src/entries/` into hashed IIFEs in `dist/` |
-| `web/src/entries/` | One file per bundle: page TS entries plus `main.css` (Tailwind v4) |
+| `web/build.ts` | esbuild: hashed IIFEs and Tailwind CSS in `dist/`. Bun only runs it |
+| `web/src/entries/` | One file per bundle: page entries plus `main.css` (Tailwind v4) |
+| `web/src/components/` | Preact islands imported by a page entry |
 | `web/view/` | Go templates; `base.html` defines shared `head` / `nav` blocks |
 
 ## Develop

@@ -15,9 +15,11 @@
       <div class="card-body">
         <p>Served by std <code>net/http</code>, rendered with <code>html/template</code> at {{.Time}}.</p>
         <p class="mt-4">
-          <button id="counter" type="button" class="btn btn-primary">
-            <span class="icon-[lucide--mouse-pointer-click]"></span> Clicked <span id="count">0</span> times
-          </button>
+          <span id="counter">
+            <button type="button" class="btn btn-primary">
+              <span class="icon-[lucide--mouse-pointer-click]"></span> Clicked <span>0</span> times
+            </button>
+          </span>
         </p>
       </div>
     </div>

@@ -83,9 +83,10 @@ name: Container image
 # restore key keeps packages that did not change when the lockfile does. Do
 # not cache web/node_modules: a prefix restore of that directory is a stale
 # tree. bun install --frozen-lockfile rebuilds node_modules from the download
-# cache. BUN_VERSION is pinned. Do not float it and do not pass latest; the
-# frontend content hash moves with the toolchain. setup-bun caches the Bun
-# executable itself. That is not the package cache.
+# cache. BUN_VERSION is pinned. Do not float it and do not pass latest.
+# Bun installs packages and runs web/build.ts; esbuild writes the content
+# hashes. setup-bun caches the Bun executable itself. That is not the
+# package cache.
 #
 # The gha cache scope is retrogo-amd64 or retrogo-arm64, not the git ref and
 # not one shared scope: a ref scope would make a tag build miss main's cache,
