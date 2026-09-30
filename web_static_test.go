@@ -66,6 +66,7 @@ func TestAssetURL(t *testing.T) {
 		"logo-deadbeef.png",
 		"icon.svg",
 		"hero.2x-abcd.webp",
+		"file-FNLXQN5F.asc",
 	}
 	tests := []struct {
 		file, want string
@@ -75,6 +76,7 @@ func TestAssetURL(t *testing.T) {
 		{"logo.png", "/static/logo-deadbeef.png"},
 		{"icon.svg", "/static/icon.svg"},
 		{"hero.2x.webp", "/static/hero.2x-abcd.webp"},
+		{"file.asc", "/static/file-FNLXQN5F.asc"},
 		{"missing.gif", "/static/missing.gif"},
 		{"readme", "/static/readme"},
 		{".gitkeep", "/static/.gitkeep"},
