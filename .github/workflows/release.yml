@@ -61,7 +61,9 @@ name: release
 # replace that set; they do not merge. test and docker repeat contents: read
 # and must not inherit contents: write. packages, id-token, attestations,
 # artifact-metadata, and actions: write are what docker-publish.yml needs
-# for the push, the manifest attestation, its storage record, and its cache.
+# for the push, the manifest attestation, its storage record, and its
+# caches (runtime image layers, the Go build cache, and the Bun package
+# cache).
 # The release job keeps only
 # contents: write. softprops/action-gh-release v2 is the last Node 20
 # release and is unmaintained; this file uses v3.
