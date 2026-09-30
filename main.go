@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	listen := envOr("RETROGO_LISTEN", ":8080")
+	listen := envOr("LISTEN", ":8080")
 	flag.StringVar(&listen, "listen", listen, "http listen address")
 	flag.Parse()
 
