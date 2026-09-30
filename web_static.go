@@ -13,9 +13,8 @@ import (
 // Unset or empty keeps same-origin paths served by this process.
 const cdnURLEnv = "ASSET_CDN_URL"
 
-// web/dist holds the bundles built by the bun project in web/
-// (`bun run build`); only .gitkeep is committed, so run the frontend build
-// before compiling the binary.
+// web/dist holds the bundles from `bun run build` (web/build.ts).
+// Only .gitkeep is committed, so run the frontend build before compiling.
 //
 //go:embed all:web/dist
 var staticFS embed.FS
@@ -44,8 +43,8 @@ var staticFiles = func() []string {
 }()
 
 // matchAsset finds "<name>-<hash>.<ext>" or a plain "<name>.<ext>" among
-// files. A hashed bundle wins when both exist. The hash is one Bun content
-// hash ([A-Za-z0-9_-]+), so a name like "home-bad.name.js" does not match.
+// files. A hashed bundle wins when both exist. The hash is the esbuild
+// content hash ([A-Za-z0-9_-]+), so a name like "home-bad.name.js" does not match.
 func matchAsset(files []string, name, ext string) string {
 	plain := name + "." + ext
 	prefix := name + "-"
