@@ -4,6 +4,7 @@
   "scripts": {
     "build": "bun run build.ts",
     "dev": "bun run build.ts --watch",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
