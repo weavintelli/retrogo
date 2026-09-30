@@ -1,48 +1,97 @@
 name: release
 
+# A semver tag runs version, then tests, then the same docker publish main
+# uses. There is no binary archive and no GitHub Release. This repository
+# ships the image only. Do not add the six-target archive job, SHA256SUMS,
+# or softprops/action-gh-release back without a decision to ship binaries.
+#
+# version runs first and does not check out, so a tag the glob accepts but
+# semver rejects (v01.2.3, v1.2.3-, v1.2.3-rc.01, v1.2.3-01) fails in seconds,
+# before tests or either platform build. It publishes no outputs. The image
+# tag rules read GITHUB_REF inside docker-publish.yml. The version job sets
+# no job-level permissions. It does not check out and its steps do not use
+# the token.
+#
+# The trigger filter is a GitHub glob, not a regex, and it is matched against
+# the whole tag. Quotes are required because [ is special in YAML. The first
+# pattern does not match v1.2.3-rc.1; the suffix needs the second pattern.
+# The glob is wider than semver on purpose. It is only a cheap event filter.
+# A bare 1.2.3 with no v does not match, and neither does build metadata
+# (v1.2.3+build). + is awkward in git refs and illegal in a Docker tag.
+# Pre-release suffixes use -.
+#
+# The version job is bash and grep -Eq, with no checkout and no Go. ${TAG#v}
+# is bash prefix removal of a literal v. TAG is an environment variable so
+# the ref is not interpolated into the script. if ! grep is required under
+# set -euo pipefail: a non-matching grep exits 1, and without the if the
+# script would die before the error line. metadata-action rejects the same
+# leading-zero forms. Catching them here avoids an empty tag list later.
+#
+# Matrix fail-fast stays at the default inside docker-publish.yml. One arch
+# that does not build stops the other. Checkout depth stays at the default.
+# Do not set fetch-depth: 0. metadata-action reads the tag from GITHUB_REF.
+#
+# cancel-in-progress is false so this file's own group does not cancel a tag
+# build. test.yml still sets it true, so force-pushing the same tag can
+# cancel the in-progress release through the test group. There is no
+# workflow_dispatch: a manual run would publish whatever tag filter happened
+# to match, from an arbitrary ref.
+#
+# The runner is ubuntu-26.04, not ubuntu-latest. The workflow ceiling is
+# contents: read, not contents: write, because nothing creates a GitHub
+# Release. packages, id-token, attestations, and actions are what
+# docker-publish.yml needs, including actions: write for its cache.
+
 on:
   push:
-    branches: ["main"]
-    tags: ["*"]
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
+  version:
     runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate semver tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          # Numeric identifiers: 0 or [1-9][0-9]*. Other pre-release
+          # identifiers must contain a letter or hyphen (rc, rc.1, alpha).
+          # Rejects v01.2.3, v1.2.3-01, v1.2.3-rc.01, v1.2.3+build.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.((0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          if [ "${TAG}" = "${ver}" ] || ! printf '%s\n' "${ver}" | grep -Eq "${semver}"; then
+            echo "::error::${TAG} is not a supported semver tag (example: v1.2.3 or v1.2.3-rc.1)"
+            exit 1
+          fi
+          printf 'valid semver %s\n' "${ver}"
+
+  test:
+    needs: version
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
+
+  docker:
+    needs: test
     permissions:
       contents: read
       packages: write
-
-    steps:
-      - name: checkout
-        uses: actions/checkout@v5
-
-      - name: docker-setup
-        uses: docker/setup-buildx-action@v4
-
-      - name: docker-login-ghcr
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: docker-meta
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=latest-,enable={{is_default_branch}}
-            type=ref,event=tag
-
-      - name: docker-build-and-push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          pull: true
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      attestations: write
+      id-token: write
+      actions: write
+    uses: ./.github/workflows/docker-publish.yml
