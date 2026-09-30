@@ -47,7 +47,7 @@ go build .
 | --- | --- |
 | Pull request, or a push to any branch other than `main` | `go test ./...` |
 | Push to `main` | the same tests, then `ghcr.io/weavintelli/retrogo:latest` |
-| Push of a semver tag (`v1.2.3`, `v1.2.3-rc.1`, and any other `-` pre-release) | the same tests, then the semver image tags below |
+| Push of a semver tag (`v1.2.3`, `v1.2.3-rc.1`, and any other `-` pre-release) | the same tests, the semver image tags below, and a GitHub Release |
 
 | Git tag | Image tags |
 | --- | --- |
@@ -56,7 +56,7 @@ go build .
 | `v0.2.0` | `0.2.0`, `0.2` |
 | `v0.0.1` | `0.0.1` |
 
-Docker tags drop the leading `v`. There is no commit-SHA tag and no branch-name tag. Pre-release suffixes (`-rc`, `-beta`, `-alpha`, and any other semver pre-release) publish the full version only. Floating tags that would be only a leading zero (`0`, `0.0`) are not published. `:latest` moves only when `main` moves, not when a tag is pushed. There is no binary archive release.
+Docker tags drop the leading `v`. There is no commit-SHA tag and no branch-name tag. Pre-release suffixes (`-rc`, `-beta`, `-alpha`, and any other semver pre-release) publish the full version only. Floating tags that would be only a leading zero (`0`, `0.0`) are not published. `:latest` moves only when `main` moves, not when a tag is pushed. A pre-release tag is marked as a GitHub pre-release and is not made the repository's latest release. The release description states the image tag and these floating-tag rules, and GitHub appends generated release notes. No binary archives are attached.
 
 The image is `linux/amd64` and `linux/arm64`, built on native runners (`ubuntu-26.04` and `ubuntu-26.04-arm`) and published as one manifest list. There is no QEMU emulation.
 
