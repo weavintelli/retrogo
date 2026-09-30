@@ -1,0 +1,68 @@
+name: docker
+
+# Push to main runs tests, then publishes. The tag rules live only in
+# docker-publish.yml so this file and release.yml cannot drift.
+#
+# This file does not run on pull requests, on other branches, or on tags.
+# Those branches and pull requests only run test.yml. release.yml is the tag
+# entry point and calls the same publish workflow. A tag pointing at main
+# therefore does not publish :latest by itself. :latest moves when main
+# moves. Shipping a release tag and updating main are two pushes.
+#
+# The trigger is the literal branch name. GitHub evaluates on.push.branches
+# before the event payload exists, so github.event.repository.default_branch
+# cannot be used here. Running on every branch and skipping with an if was
+# rejected: the workflow would still be scheduled for feature branches.
+# is_default_branch inside docker-publish.yml is the second guard. If main
+# is no longer the default branch, that expression is false, no tag is
+# produced, and the publish fails on purpose instead of pushing :latest from
+# a non-default branch.
+#
+# There is no commit-SHA tag and no per-branch tag. type=sha and
+# type=ref,event=branch were removed. main publishes only :latest. A semver
+# tag publishes only semver image tags.
+#
+# The workflow permissions are the ceiling. Job permissions replace that set
+# for the job; they do not merge. The test job repeats contents: read and
+# must not inherit packages: write. packages: write is the GHCR push.
+# id-token: write and attestations: write are required because the merged
+# manifest is attested after the platform builds. actions: write is required
+# because a narrowed token cannot save the Actions cache that
+# docker-publish.yml writes; without it cache-to fails the build.
+# The concurrency group is docker-${{ github.ref }}, distinct from
+# retrogo-test-${{ github.ref }}. cancel-in-progress replaces an in-progress
+# :latest build when a newer commit lands on main. There is no
+# workflow_dispatch: a manual run would republish :latest from whatever ref
+# was dispatched.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+      actions: write
+    uses: ./.github/workflows/docker-publish.yml

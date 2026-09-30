@@ -17,7 +17,7 @@ COPY . .
 COPY --from=static /repo/web/dist web/dist
 RUN go build -trimpath -ldflags="-s -w" -o /retrogo
 
-FROM debian:bookworm-slim
+FROM debian:13-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	tini \
 	ca-certificates \
