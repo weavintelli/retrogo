@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
 COPY retrogo /retrogo
-ENV RETROGO_LISTEN=:8080
+ENV LISTEN=:8080
 # Optional. ASSET_CDN_URL prefixes /static/ asset URLs (for example
 # https://cdn.example.com). Leave it unset to serve those URLs from this process.
 EXPOSE 8080

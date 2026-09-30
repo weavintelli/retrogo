@@ -15,7 +15,7 @@ Retro on the server, modern in the build:
 
 | Path | Role |
 |---|---|
-| `main.go` | Flags (`-listen` / `RETROGO_LISTEN`, default `:8080`), `ASSET_CDN_URL`, graceful shutdown |
+| `main.go` | Flags (`-listen` / `LISTEN`, default `:8080`), `ASSET_CDN_URL`, graceful shutdown |
 | `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
 | `web_tmpl.go` | `//go:embed web/view/*.html`, template func `asset` |
 | `web_static.go` | `//go:embed all:web/dist`, `<name>-<hash>.<ext>` matching, `/static/` handler, `ASSET_CDN_URL` prefix |
@@ -39,7 +39,7 @@ go run .
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `RETROGO_LISTEN` | `:8080` | Listen address (`-listen` overrides the environment) |
+| `LISTEN` | `:8080` | Listen address (`-listen` overrides the environment) |
 | `ASSET_CDN_URL` | empty | Base URL prefixed onto static asset URLs. Empty serves `/static/` from this process |
 
 ```bash
