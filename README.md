@@ -20,7 +20,6 @@ Retro on the server, modern in the build:
 | `web_tmpl.go` | `//go:embed web/view/*.html`, template func `asset` |
 | `web_static.go` | `//go:embed all:web/dist`, `<name>-<hash>.<ext>` matching, `/static/` handler, `ASSET_CDN_URL` prefix |
 | `web/build.ts` | esbuild: hashed bundles, and `copy` entries from `src/assets`. Bun only runs it |
-| `web/static-assets.ts` | Lists `src/assets` and returns them to esbuild with the `copy` loader |
 | `web/src/entries/` | One file per bundle: page entries plus `main.css` (Tailwind v4) |
 | `web/src/assets/` | Copy-only files (`logo.png`, `file.asc`, …). Not an esbuild entry |
 | `web/src/components/` | Preact islands imported by a page entry |

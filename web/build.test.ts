@@ -10,7 +10,7 @@ import {
   listStaticAssets,
   logicalBundleName,
   staticAssetPlugin,
-} from "./static-assets.ts";
+} from "./build.ts";
 
 const vectors: { name: string; bytes: Uint8Array }[] = [
   { name: "logo.png", bytes: new TextEncoder().encode("hello asset\n") },
