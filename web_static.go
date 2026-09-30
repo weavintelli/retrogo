@@ -4,8 +4,14 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 )
+
+// cdnURLEnv is the runtime base URL prefixed onto /static/ asset URLs.
+// Unset or empty keeps same-origin paths served by this process.
+const cdnURLEnv = "ASSET_CDN_URL"
 
 // web/dist holds the bundles from `bun run build` (web/build.ts).
 // Only .gitkeep is committed, so run the frontend build before compiling.
@@ -80,22 +86,80 @@ func isAssetHash(s string) bool {
 	return true
 }
 
-// jsAsset resolves a bundle entry name ("home") to its served path
-// ("/static/home-1a2b3c4d.js"). When the bundle has not been built it falls
-// back to the unhashed name, which 404s until `bun run build` has run.
-func jsAsset(name string) string {
-	if match := matchAsset(staticFiles, name, "js"); match != "" {
-		return "/static/" + match
-	}
-	return "/static/" + name + ".js"
+// asset resolves a dist file ("home.js", "main.css", "logo.png") to its URL
+// ("/static/home-1a2b3c4d.js", or that path prefixed with ASSET_CDN_URL).
+// The extension is the suffix after the last dot, so "hero.2x.webp" matches
+// "hero.2x-<hash>.webp". A hashed file wins over the plain name. When nothing
+// matches, the unhashed name is returned and 404s until the file is in web/dist.
+func asset(file string) string {
+	return prefixStaticURL(assetURL(staticFiles, file))
 }
 
-// cssAsset is the stylesheet counterpart of jsAsset ("/static/main-1a2b3c4d.css").
-func cssAsset(name string) string {
-	if match := matchAsset(staticFiles, name, "css"); match != "" {
-		return "/static/" + match
+func assetURL(files []string, file string) string {
+	if name, ext, ok := splitAsset(file); ok {
+		if match := matchAsset(files, name, ext); match != "" {
+			return "/static/" + match
+		}
 	}
-	return "/static/" + name + ".css"
+	return "/static/" + file
+}
+
+// splitAsset separates "logo.png" into ("logo", "png"). A leading dot
+// (".gitkeep") or a missing extension is not a hashed asset name.
+func splitAsset(file string) (name, ext string, ok bool) {
+	dot := strings.LastIndex(file, ".")
+	if dot <= 0 || dot == len(file)-1 {
+		return "", "", false
+	}
+	return file[:dot], file[dot+1:], true
+}
+
+// cdnBase is ASSET_CDN_URL with surrounding space and trailing slashes
+// removed. Empty means direct, same-origin /static/ URLs. Trailing slashes
+// are dropped so the base joins the absolute /static/... path with one slash
+// and the scheme's "://" is left intact.
+func cdnBase() string {
+	return strings.TrimRight(strings.TrimSpace(os.Getenv(cdnURLEnv)), "/")
+}
+
+func prefixStaticURL(path string) string {
+	base := cdnBase()
+	if base == "" {
+		return path
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
+}
+
+// cdnOrigin is the scheme://host of ASSET_CDN_URL for CSP, or "" when the
+// base is unset, empty, or not an absolute http(s) URL with a safe host.
+func cdnOrigin() string {
+	raw := strings.TrimSpace(os.Getenv(cdnURLEnv))
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || !isCSPHost(u.Host) {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+func isCSPHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.', r == '-', r == ':', r == '[', r == ']':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // staticHandler serves the embedded bundles. Hashed names are immutable, so a
