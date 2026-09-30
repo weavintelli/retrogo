@@ -8,15 +8,16 @@ Retro on the server, modern in the build:
 - **Bun multi-entry build** — every `.ts` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` (`Bun.build`, IIFE, minified) into `web/dist/<name>-<hash>.<ext>`. `main.css` is a full Tailwind v4 build (`bun-plugin-tailwind`) with build-time lucide icons via `@iconify/tailwind4`.
 - **`html/template` views** — embedded with `//go:embed`, referencing bundles only by entry name: `{{cssAsset "main"}}`, `{{jsAsset "home"}}`. Hash resolution happens in `web_static.go`.
 - **Immutable static serving** — `web/dist` is embedded (`//go:embed all:web/dist`) and served at `GET /static/` with `Cache-Control: public, max-age=31536000, immutable`, so hashed assets are cached forever and new builds get new URLs.
+- **Optional CDN prefix** — set `RETROGO_CDN_URL` to a base URL and `{{jsAsset}}` / `{{cssAsset}}` emit that base plus `/static/<file>`. Unset or empty keeps same-origin `/static/` URLs.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `main.go` | Flags (`-listen` / `RETROGO_LISTEN`, default `:8080`), graceful shutdown |
+| `main.go` | Flags (`-listen` / `RETROGO_LISTEN`, default `:8080`), `RETROGO_CDN_URL`, graceful shutdown |
 | `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
 | `web_tmpl.go` | `//go:embed web/view/*.html`, template funcs `jsAsset` / `cssAsset` |
-| `web_static.go` | `//go:embed all:web/dist`, `<entry>-<hash>.<ext>` matching, `/static/` handler |
+| `web_static.go` | `//go:embed all:web/dist`, `<entry>-<hash>.<ext>` matching, `/static/` handler, `RETROGO_CDN_URL` prefix |
 | `web/build.ts` | Bun build: bundles every entry in `src/entries/` into hashed IIFEs in `dist/` |
 | `web/src/entries/` | One file per bundle: page TS entries plus `main.css` (Tailwind v4) |
 | `web/view/` | Go templates; `base.html` defines shared `head` / `nav` blocks |
@@ -30,6 +31,19 @@ Retro on the server, modern in the build:
 # terminal 2: run the server
 go run .
 ```
+
+## Configuration
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `RETROGO_LISTEN` | `:8080` | Listen address (`-listen` overrides the environment) |
+| `RETROGO_CDN_URL` | empty | Base URL prefixed onto static asset URLs. Empty serves `/static/` from this process |
+
+```bash
+RETROGO_CDN_URL=https://cdn.example.com go run .
+```
+
+`https://cdn.example.com` and `https://cdn.example.com/` both produce `https://cdn.example.com/static/<file>`. A path on the base is kept (`https://cdn.example.com/assets/` → `https://cdn.example.com/assets/static/<file>`). The process still serves `GET /static/` so an origin-pull CDN can fetch the files. `script-src` and `style-src` allow the CDN origin while the variable is set.
 
 ## Build
 

@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 COPY retrogo /retrogo
 ENV RETROGO_LISTEN=:8080
+# Optional. RETROGO_CDN_URL prefixes /static/ asset URLs (for example
+# https://cdn.example.com). Leave it unset to serve those URLs from this process.
 EXPOSE 8080
 ENTRYPOINT ["tini", "--"]
 CMD ["/retrogo"]

@@ -4,8 +4,14 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 )
+
+// cdnURLEnv is the runtime base URL prefixed onto /static/ asset URLs.
+// Unset or empty keeps same-origin paths served by this process.
+const cdnURLEnv = "RETROGO_CDN_URL"
 
 // web/dist holds the bundles built by the bun project in web/
 // (`bun run build`); only .gitkeep is committed, so run the frontend build
@@ -81,22 +87,72 @@ func isAssetHash(s string) bool {
 	return true
 }
 
-// jsAsset resolves a bundle entry name ("home") to its served path
-// ("/static/home-1a2b3c4d.js"). When the bundle has not been built it falls
-// back to the unhashed name, which 404s until `bun run build` has run.
+// jsAsset resolves a bundle entry name ("home") to its URL
+// ("/static/home-1a2b3c4d.js", or that path prefixed with RETROGO_CDN_URL).
+// When the bundle has not been built it falls back to the unhashed name,
+// which 404s until `bun run build` has run.
 func jsAsset(name string) string {
-	if match := matchAsset(staticFiles, name, "js"); match != "" {
-		return "/static/" + match
-	}
-	return "/static/" + name + ".js"
+	return prefixStaticURL(assetPath(name, "js"))
 }
 
 // cssAsset is the stylesheet counterpart of jsAsset ("/static/main-1a2b3c4d.css").
 func cssAsset(name string) string {
-	if match := matchAsset(staticFiles, name, "css"); match != "" {
+	return prefixStaticURL(assetPath(name, "css"))
+}
+
+func assetPath(name, ext string) string {
+	if match := matchAsset(staticFiles, name, ext); match != "" {
 		return "/static/" + match
 	}
-	return "/static/" + name + ".css"
+	return "/static/" + name + "." + ext
+}
+
+// cdnBase is RETROGO_CDN_URL with surrounding space and trailing slashes
+// removed. Empty means direct, same-origin /static/ URLs. Trailing slashes
+// are dropped so the base joins the absolute /static/... path with one slash
+// and the scheme's "://" is left intact.
+func cdnBase() string {
+	return strings.TrimRight(strings.TrimSpace(os.Getenv(cdnURLEnv)), "/")
+}
+
+func prefixStaticURL(path string) string {
+	base := cdnBase()
+	if base == "" {
+		return path
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return base + path
+}
+
+// cdnOrigin is the scheme://host of RETROGO_CDN_URL for CSP, or "" when the
+// base is unset, empty, or not an absolute http(s) URL with a safe host.
+func cdnOrigin() string {
+	raw := strings.TrimSpace(os.Getenv(cdnURLEnv))
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || !isCSPHost(u.Host) {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+func isCSPHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	for _, r := range host {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.', r == '-', r == ':', r == '[', r == ']':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // staticHandler serves the embedded bundles. Hashed names are immutable, so a

@@ -35,10 +35,18 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
+		scriptSrc := "'self'"
+		styleSrc := "'self'"
+		// Hashed bundles are referenced from RETROGO_CDN_URL when that base is
+		// set, so script and style loads from that origin have to be allowed.
+		if origin := cdnOrigin(); origin != "" {
+			scriptSrc += " " + origin
+			styleSrc += " " + origin
+		}
 		h.Set("Content-Security-Policy", strings.Join([]string{
 			"default-src 'none'",
-			"script-src 'self'",
-			"style-src 'self'",
+			"script-src " + scriptSrc,
+			"style-src " + styleSrc,
 			"img-src 'self' data:",
 			"connect-src 'self'",
 			"form-action 'self'",

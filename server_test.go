@@ -31,7 +31,9 @@ func TestPages(t *testing.T) {
 			assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
 			csp := rec.Header().Get("Content-Security-Policy")
 			assert.NotContains(t, csp, "unsafe-inline")
+			assert.Contains(t, csp, "script-src 'self'")
 			assert.Contains(t, csp, "style-src 'self'")
+			assert.NotContains(t, csp, "://")
 			assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 		})
 	}
@@ -70,5 +72,36 @@ func TestStaticCaching(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/"+name, nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "public, max-age=31536000, immutable", rec.Header().Get("Cache-Control"))
+	assert.Contains(t, rec.Header().Get("Content-Type"), "javascript")
+}
+
+func TestCDNPrefixedPages(t *testing.T) {
+	t.Setenv(cdnURLEnv, "https://cdn.example.com/retrogo/")
+	h := NewServer().Handler()
+
+	for _, path := range []string{"/", "/about"} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+			body := rec.Body.String()
+			assert.Contains(t, body, "https://cdn.example.com/retrogo/static/")
+			assert.NotContains(t, body, "retrogo//static")
+			assert.NotRegexp(t, `src="/static/`, body)
+			assert.NotRegexp(t, `href="/static/`, body)
+			csp := rec.Header().Get("Content-Security-Policy")
+			assert.Contains(t, csp, "script-src 'self' https://cdn.example.com")
+			assert.Contains(t, csp, "style-src 'self' https://cdn.example.com")
+		})
+	}
+
+	// The process still serves the files so an origin-pull CDN can fetch them.
+	name := matchAsset(staticFiles, "home", "js")
+	if name == "" {
+		t.Skip("home bundle not built")
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/static/"+name, nil))
+	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Header().Get("Content-Type"), "javascript")
 }
