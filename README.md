@@ -77,7 +77,7 @@ Docker tags drop the leading `v`. There is no commit-SHA tag and no branch-name 
 
 The image is `linux/amd64` and `linux/arm64`, built on native runners (`ubuntu-26.04` and `ubuntu-26.04-arm`) and published as one manifest list. There is no QEMU emulation.
 
-The runner builds the frontend with Bun and the binary with Go, then the `Dockerfile` only installs a runtime (`ubuntu:26.04`, `tini`, `ca-certificates`) and copies the binary in. The runner and the image are the same Ubuntu series. The frontend stays on the runner because `main.css`'s Tailwind `@source "../../../*.go"` resolves relative to the CSS file — the checkout already has the Go files next to `web/`. Building that step in an image without the same layout makes the glob land on the container root and the build hangs scanning the whole filesystem.
+The runner builds the frontend with Bun and the binary with Go, then the `Dockerfile` only installs a runtime (`ubuntu:26.04`, `tini`, `ca-certificates`) and copies the binary in. The runner and the image are the same Ubuntu series. The frontend stays on the runner because `main.css`'s Tailwind `@source "../../../**/*.go"` resolves relative to the CSS file — the checkout already has the Go files next to `web/`, including any added later under nested directories. Building that step in an image without the same layout makes the glob land on the container root and the build hangs scanning the whole filesystem.
 
 ## Adding a page
 
