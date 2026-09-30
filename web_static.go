@@ -11,7 +11,7 @@ import (
 
 // cdnURLEnv is the runtime base URL prefixed onto /static/ asset URLs.
 // Unset or empty keeps same-origin paths served by this process.
-const cdnURLEnv = "RETROGO_CDN_URL"
+const cdnURLEnv = "ASSET_CDN_URL"
 
 // web/dist holds the bundles built by the bun project in web/
 // (`bun run build`); only .gitkeep is committed, so run the frontend build
@@ -88,7 +88,7 @@ func isAssetHash(s string) bool {
 }
 
 // jsAsset resolves a bundle entry name ("home") to its URL
-// ("/static/home-1a2b3c4d.js", or that path prefixed with RETROGO_CDN_URL).
+// ("/static/home-1a2b3c4d.js", or that path prefixed with ASSET_CDN_URL).
 // When the bundle has not been built it falls back to the unhashed name,
 // which 404s until `bun run build` has run.
 func jsAsset(name string) string {
@@ -107,7 +107,7 @@ func assetPath(name, ext string) string {
 	return "/static/" + name + "." + ext
 }
 
-// cdnBase is RETROGO_CDN_URL with surrounding space and trailing slashes
+// cdnBase is ASSET_CDN_URL with surrounding space and trailing slashes
 // removed. Empty means direct, same-origin /static/ URLs. Trailing slashes
 // are dropped so the base joins the absolute /static/... path with one slash
 // and the scheme's "://" is left intact.
@@ -126,7 +126,7 @@ func prefixStaticURL(path string) string {
 	return base + path
 }
 
-// cdnOrigin is the scheme://host of RETROGO_CDN_URL for CSP, or "" when the
+// cdnOrigin is the scheme://host of ASSET_CDN_URL for CSP, or "" when the
 // base is unset, empty, or not an absolute http(s) URL with a safe host.
 func cdnOrigin() string {
 	raw := strings.TrimSpace(os.Getenv(cdnURLEnv))

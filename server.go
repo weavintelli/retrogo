@@ -37,7 +37,7 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Cache-Control", "no-store")
 		scriptSrc := "'self'"
 		styleSrc := "'self'"
-		// Hashed bundles are referenced from RETROGO_CDN_URL when that base is
+		// Hashed bundles are referenced from ASSET_CDN_URL when that base is
 		// set, so script and style loads from that origin have to be allowed.
 		if origin := cdnOrigin(); origin != "" {
 			scriptSrc += " " + origin
