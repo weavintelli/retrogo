@@ -38,6 +38,11 @@ name: test
 # full commit SHAs are not pinned. On 2026-09-23 GitHub removed Node 20 from
 # hosted runners, so checkout and setup-go are the Node 24 majors (v7).
 # go-version-file reads the go line in go.mod. Do not also set go-version.
+# setup-go caches GOMODCACHE and GOCACHE. The input is left unset, so the
+# default (true) applies and the key is the hash of every go.sum. Do not set
+# cache: false, do not pin cache-dependency-path to one file, and do not add
+# a second actions/cache step on those directories. go.sum stays committed.
+# Without it the module cache does not exist and the key is a hash of nothing.
 # The runner is ubuntu-26.04, not ubuntu-latest: ubuntu-latest moves to
 # Ubuntu 26 during October 2026, and this repository already pins the image.
 # Timeout 15 bounds a hung test; the suite itself is seconds.

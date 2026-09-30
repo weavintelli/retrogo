@@ -31,7 +31,8 @@ name: docker
 # linked-artifacts storage record. push-to-registry is true, and without
 # this scope the attestation is still signed while the run warns that no
 # storage record was saved. actions: write is required because a narrowed
-# token cannot save the Actions cache that docker-publish.yml writes;
+# token cannot save the Actions cache that docker-publish.yml writes
+# (runtime image layers, the Go build cache, and the Bun package cache);
 # without it cache-to fails the build.
 # The concurrency group is docker-${{ github.ref }}, distinct from
 # retrogo-test-${{ github.ref }}. cancel-in-progress replaces an in-progress

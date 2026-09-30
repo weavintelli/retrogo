@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestMatchAsset(t *testing.T) {
 	files := []string{
@@ -25,8 +29,8 @@ func TestMatchAsset(t *testing.T) {
 		{"widget", "js", "widget-ab_cd-ef.js"},
 	}
 	for _, tt := range tests {
-		if got := matchAsset(files, tt.name, tt.ext); got != tt.want {
-			t.Errorf("matchAsset(%q, %q) = %q, want %q", tt.name, tt.ext, got, tt.want)
-		}
+		t.Run(tt.name+"."+tt.ext, func(t *testing.T) {
+			assert.Equal(t, tt.want, matchAsset(files, tt.name, tt.ext))
+		})
 	}
 }

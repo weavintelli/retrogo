@@ -38,9 +38,9 @@ name: docker-publish
 # output is not a safe way to carry the tag list. build and merge both need
 # meta, or the artifact is not guaranteed to exist yet.
 #
-# This repository has no version ldflag, so there is no REVISION build-arg
-# and the Dockerfile is unchanged. .git is in .dockerignore; that does not
-# matter here because nothing in the image reads the SHA.
+# This repository has no version ldflag, so there is no REVISION build-arg.
+# The image context is the finished binary plus the Dockerfile, not the
+# repository, so .dockerignore does not apply to this build.
 #
 # Platforms are linux/amd64 and linux/arm64 only. They are a matrix, not one
 # job with QEMU. ubuntu-26.04 builds amd64 and ubuntu-26.04-arm builds arm64,
@@ -56,23 +56,46 @@ name: docker-publish
 # id-token, attestations, or artifact-metadata. SBOM stays off; it is not
 # part of this profile and it adds build time.
 #
-# Labels are passed into each platform build. Annotations are passed there
-# and again onto the index at merge time, so the registry record matches
-# metadata-action's OCI output. The cache scope is retrogo-amd64 or
-# retrogo-arm64, not the git ref and not one shared scope: a ref scope would
-# make a tag build miss main's cache, and one scope shared by both arches
-# would mix incompatible layers. mode=max. Last write wins if main and a tag
-# save the same arch at the same time, which is acceptable for a layer cache.
-# actions: write is granted because cache-to uses the Actions cache and a
-# narrowed token cannot save it otherwise.
+# Bun and Go run on the runner. The Dockerfile only installs the runtime and
+# copies the binary. The runner is ubuntu-26.04 and the image is ubuntu:26.04,
+# the same series. Do not move the builds back into the image, and do not
+# switch the runtime to Alpine or Debian. main.css's Tailwind @source glob
+# walks the Go files next to web/. The checkout already has that layout. An
+# oven/bun stage had to COPY *.go onto /repo or the glob landed on the
+# container root and the build hung scanning the filesystem.
 #
-# The runtime image is debian:13-slim, as the Dockerfile already
-# specifies. Do not switch it to Alpine as part of the workflow. The build
-# timeout is 45 minutes as a ceiling for a cold bun-and-go image build, not
-# because of QEMU. Matrix fail-fast stays at the default: one arch that does
-# not build should stop the other. metadata-action v5 and build-push-action
-# v6 predate the Node 20 removal; this file uses metadata-action v6 and
-# build-push-action v7. Majors float. There is no workflow_dispatch.
+# Go uses setup-go's default cache (GOMODCACHE and GOCACHE). The key includes
+# the runner platform and the hash of every go.sum, so the two arches do not
+# share it, and a new module still restores the previous cache from the
+# prefix. Leave the cache input unset. Do not add a second actions/cache on
+# those directories. CGO_ENABLED=0 and GOARCH come from the matrix leg, so
+# the binary matches the image it is copied into. -mod=readonly refuses to
+# edit go.mod or go.sum on the runner. go.sum stays committed.
+#
+# Bun's download cache is actions/cache on ~/.bun/install/cache. The key is
+# the pinned Bun version, the arch, and the hash of web/bun.lock. The prefix
+# restore key keeps packages that did not change when the lockfile does. Do
+# not cache web/node_modules: a prefix restore of that directory is a stale
+# tree. bun install --frozen-lockfile rebuilds node_modules from the download
+# cache. BUN_VERSION is pinned. Do not float it and do not pass latest; the
+# frontend content hash moves with the toolchain. setup-bun caches the Bun
+# executable itself. That is not the package cache.
+#
+# The gha cache scope is retrogo-amd64 or retrogo-arm64, not the git ref and
+# not one shared scope: a ref scope would make a tag build miss main's cache,
+# and one scope shared by both arches would mix incompatible apt layers.
+# mode=max. It keeps the runtime layers. The binary layer misses whenever the
+# binary changes, which is every source commit. Last write wins if main and a
+# tag save the same arch at the same time, which is acceptable for a layer
+# cache. actions: write is granted because cache-to, setup-go, and
+# actions/cache all write the Actions cache; a narrowed token cannot.
+#
+# The build timeout is 45 minutes as a ceiling for a cold bun-and-go build,
+# not because of QEMU. Matrix fail-fast stays at the default: one arch that
+# does not build should stop the other. metadata-action v5 and
+# build-push-action v6 predate the Node 20 removal; this file uses
+# metadata-action v6, build-push-action v7, setup-bun v2, and actions/cache
+# v5. Majors float. There is no workflow_dispatch.
 
 on:
   workflow_call:
@@ -87,6 +110,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  BUN_VERSION: "1.4.2"
 
 jobs:
   meta:
@@ -174,6 +198,45 @@ jobs:
             printf '%s\n' "${delim}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache Bun packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ env.BUN_VERSION }}-${{ matrix.arch }}-${{ hashFiles('web/bun.lock') }}
+          restore-keys: |
+            bun-${{ env.BUN_VERSION }}-${{ matrix.arch }}-
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: web
+        run: bun run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+        run: go build -mod=readonly -trimpath -ldflags="-s -w" -o retrogo
+
+      - name: Stage image context
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/image"
+          cp retrogo Dockerfile "${RUNNER_TEMP}/image/"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -188,7 +251,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ runner.temp }}/image
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.loaded.outputs.labels }}
           annotations: ${{ steps.loaded.outputs.annotations }}
