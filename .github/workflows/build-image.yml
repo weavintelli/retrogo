@@ -10,8 +10,7 @@ name: Container image
 # workflow_call-only file does not appear as its own button in the Actions
 # tab. A called workflow cannot widen the caller's token, so both callers
 # grant contents: read, packages: write, attestations: write, id-token: write,
-# artifact-metadata: write, and actions: write, and this file declares the
-# same ceiling.
+# and actions: write, and this file declares the same ceiling.
 #
 # Tag policy, and why each piece stays:
 #   Push to the default branch: latest
@@ -54,12 +53,14 @@ name: Container image
 # with provenance and SBOM off. Provenance on a by-digest push adds an
 # attestation manifest that imagetools create then publishes as
 # unknown/unknown. The merge job attests the manifest list instead, which is
-# why id-token and attestations stay granted. artifact-metadata: write stays
-# on that job too: push-to-registry creates a linked-artifacts storage
-# record, and a token without the scope warns "no artifacts found" after the
-# attestation is signed. The build job does not attest, so it does not get
-# id-token, attestations, or artifact-metadata. SBOM stays off; it is not
-# part of this profile and it adds build time.
+# why id-token and attestations stay granted. push-to-registry stays false.
+# GHCR does not implement the OCI referrers API, so that push falls back to
+# a tag named sha256-<digest>. The package page then offers
+# `docker pull …:sha256-<digest>`, and the tag points at the attestation
+# index, not the image. The attestation still goes to GitHub's attestation
+# store. Do not set push-to-registry back to true. The build job does not
+# attest, so it does not get id-token or attestations. SBOM stays off; it is
+# not part of this profile and it adds build time.
 #
 # Bun and Go run on the runner. The Dockerfile only installs the runtime and
 # copies the binary. The runner is ubuntu-26.04 and the image is ubuntu:26.04,
@@ -110,7 +111,6 @@ permissions:
   packages: write
   attestations: write
   id-token: write
-  artifact-metadata: write
   actions: write
 
 env:
@@ -292,7 +292,6 @@ jobs:
       packages: write
       attestations: write
       id-token: write
-      artifact-metadata: write
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -360,4 +359,4 @@ jobs:
         with:
           subject-name: ${{ steps.push.outputs.image }}
           subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
+          push-to-registry: false
