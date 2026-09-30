@@ -1,0 +1,288 @@
+name: docker-publish
+
+# Called by docker.yml (push to main) and release.yml (semver tag). This is
+# the only place image tags and the image build are defined. A
+# workflow_call-only file does not appear as its own button in the Actions
+# tab. A called workflow cannot widen the caller's token, so both callers
+# grant contents: read, packages: write, attestations: write, id-token: write,
+# and actions: write, and this file declares the same ceiling.
+#
+# Tag policy, and why each piece stays:
+#   Push to the default branch: latest
+#   Tag v1.2.3: 1.2.3, 1.2, 1
+#   Tag v1.2.3-rc.1 (any hyphenated pre-release): 1.2.3-rc.1
+#   Tag v0.2.0: 0.2.0, 0.2
+#   Tag v0.0.1: 0.0.1
+#   Tag v0.10.0: 0.10.0, 0.10 (the ref does not have the prefix refs/tags/v0.0.)
+# flavor latest=false disables metadata-action's latest=auto, which would
+# retag :latest on every semver push. latest=false alone would also stop main
+# from publishing :latest, so type=raw,value=latest,enable={{is_default_branch}}
+# is the explicit :latest. {{is_default_branch}} is true for a default-branch
+# push and false for a tag, so a tag does not take :latest either.
+# ${{ }} is GitHub's expression language and {{ }} is metadata-action's.
+# Both appear in tags: on purpose. The v0 and v0.0 enables are GitHub
+# expressions evaluated to the literal true or false before the action sees
+# them. They suppress floating channels that would be only 0 or 0.0.
+# On a branch push both enables are true, and that is harmless: type=semver
+# emits nothing unless the event is a tag. A pre-release does not move
+# floating channels for a second reason: metadata-action renders {{major}} as
+# the full pre-release string and then dedupes it with {{version}}.
+# No type=sha and no type=ref. Do not add them back. Do not set flavor back
+# to latest=auto, and do not drop the v0 / v0.0 enables.
+#
+# The meta job is the only copy of that policy. It refuses an empty tag list
+# before either platform build starts, so a tag shape metadata-action cannot
+# parse fails before the image build. Tags, labels, and annotations are
+# stored as an artifact. Job outputs are not used for them: a multiline job
+# output is not a safe way to carry the tag list. build and merge both need
+# meta, or the artifact is not guaranteed to exist yet.
+#
+# This repository has no version ldflag, so there is no REVISION build-arg
+# and the Dockerfile is unchanged. .git is in .dockerignore; that does not
+# matter here because nothing in the image reads the SHA.
+#
+# Platforms are linux/amd64 and linux/arm64 only. They are a matrix, not one
+# job with QEMU. ubuntu-26.04 builds amd64 and ubuntu-26.04-arm builds arm64,
+# each on its own CPU. setup-qemu-action must not be added back: emulation is
+# the slow path this matrix exists to avoid. Each leg pushes by digest only,
+# with provenance and SBOM off. Provenance on a by-digest push adds an
+# attestation manifest that imagetools create then publishes as
+# unknown/unknown. The merge job attests the manifest list instead, which is
+# why id-token and attestations stay granted. SBOM stays off; it is not part
+# of this profile and it adds build time.
+#
+# Labels are passed into each platform build. Annotations are passed there
+# and again onto the index at merge time, so the registry record matches
+# metadata-action's OCI output. The cache scope is retrogo-amd64 or
+# retrogo-arm64, not the git ref and not one shared scope: a ref scope would
+# make a tag build miss main's cache, and one scope shared by both arches
+# would mix incompatible layers. mode=max. Last write wins if main and a tag
+# save the same arch at the same time, which is acceptable for a layer cache.
+# actions: write is granted because cache-to uses the Actions cache and a
+# narrowed token cannot save it otherwise.
+#
+# The runtime image is debian:13-slim, as the Dockerfile already
+# specifies. Do not switch it to Alpine as part of the workflow. The build
+# timeout is 45 minutes as a ceiling for a cold bun-and-go image build, not
+# because of QEMU. Matrix fail-fast stays at the default: one arch that does
+# not build should stop the other. metadata-action v5 and build-push-action
+# v6 predate the Node 20 removal; this file uses metadata-action v6 and
+# build-push-action v7. Majors float. There is no workflow_dispatch.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+  actions: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  meta:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.0.') }}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+
+      - name: Require image tags
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+          ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAGS}" ]; then
+            echo "::error::no Docker tags generated for ${GITHUB_REF}"
+            exit 1
+          fi
+          printf '%s\n' "${TAGS}"
+          mkdir -p "${RUNNER_TEMP}/docker-meta"
+          printf '%s\n' "${TAGS}" > "${RUNNER_TEMP}/docker-meta/tags.txt"
+          printf '%s\n' "${LABELS}" > "${RUNNER_TEMP}/docker-meta/labels.txt"
+          printf '%s\n' "${ANNOTATIONS}" > "${RUNNER_TEMP}/docker-meta/annotations.txt"
+
+      - name: Upload metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-meta
+          path: ${{ runner.temp }}/docker-meta/
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-26.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-26.04-arm
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download metadata
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-meta
+          path: ${{ runner.temp }}/docker-meta
+
+      - name: Load metadata
+        id: loaded
+        run: |
+          set -euo pipefail
+          delim="META_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          {
+            printf 'labels<<%s\n' "${delim}"
+            cat "${RUNNER_TEMP}/docker-meta/labels.txt"
+            printf '%s\n' "${delim}"
+            printf 'annotations<<%s\n' "${delim}"
+            cat "${RUNNER_TEMP}/docker-meta/annotations.txt"
+            printf '%s\n' "${delim}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.loaded.outputs.labels }}
+          annotations: ${{ steps.loaded.outputs.annotations }}
+          outputs: "type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true"
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=retrogo-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=retrogo-${{ matrix.arch }}
+
+      - name: Export digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/digests"
+          printf '%s\n' "${DIGEST}"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    needs: [meta, build]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Download metadata
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-meta
+          path: ${{ runner.temp }}/docker-meta
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push
+        id: push
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          META: ${{ runner.temp }}/docker-meta
+        run: |
+          set -euo pipefail
+          image="$(printf '%s' "${IMAGE}" | tr '[:upper:]' '[:lower:]')"
+          args=()
+          while IFS= read -r tag || [ -n "${tag}" ]; do
+            [ -n "${tag}" ] || continue
+            args+=(-t "${tag}")
+          done < "${META}/tags.txt"
+          if [ -s "${META}/annotations.txt" ]; then
+            while IFS= read -r line || [ -n "${line}" ]; do
+              [ -n "${line}" ] || continue
+              args+=(--annotation "index:${line}")
+            done < "${META}/annotations.txt"
+          fi
+          sources=()
+          for digest in *; do
+            [ -f "${digest}" ] || continue
+            sources+=("${image}@sha256:${digest}")
+          done
+          if [ "${#sources[@]}" -ne 2 ]; then
+            echo "::error::expected 2 platform digests, found ${#sources[@]}"
+            exit 1
+          fi
+          docker buildx imagetools create "${args[@]}" "${sources[@]}"
+          first="$(head -n 1 "${META}/tags.txt")"
+          # {{.Manifest...}} is a special case in buildx and does not run the
+          # template. {{with .Manifest}} reads the index digest instead.
+          manifest_digest="$(docker buildx imagetools inspect --format '{{with .Manifest}}{{.Digest}}{{end}}' "${first}")"
+          printf 'image=%s\n' "${image}" >> "${GITHUB_OUTPUT}"
+          printf 'digest=%s\n' "${manifest_digest}" >> "${GITHUB_OUTPUT}"
+          docker buildx imagetools inspect "${first}"
+
+      - name: Attest manifest
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

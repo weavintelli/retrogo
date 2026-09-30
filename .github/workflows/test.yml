@@ -1,0 +1,75 @@
+name: test
+
+# Events are split across four files so a failing test cannot publish.
+# test.yml runs on pull requests and on pushes to any branch except main.
+# A push to main starts docker.yml, which calls this file before it
+# publishes, so listing main here too would run the suite twice. A tag ref
+# is not a branch, so a tag push does not start this file; release.yml calls
+# it. workflow_call filters are not applied when this file is called, so
+# branches-ignore does not block docker.yml or release.yml.
+#
+# workflow_run was rejected as the publish gate. It reads the workflow file
+# from the default branch only, checks out github.event.workflow_run.head_sha
+# rather than github.sha, and makes the token permissions awkward.
+# workflow_call keeps the test and the publish in the same run.
+#
+# Pull requests into any base branch are tested. There is no paths filter:
+# a change under an internal package or a workflow edit can both affect what
+# ships.
+#
+# This file grants only contents: read. That is enough to check out and
+# test. Publish permissions are not granted here. A called workflow can only
+# narrow the caller's token, never widen it, so docker.yml and release.yml
+# must grant contents: read on the job that calls this file. secrets: inherit
+# is not required; secrets.GITHUB_TOKEN is already available.
+#
+# The concurrency prefix must stay distinct from docker-${{ github.ref }} and
+# release-${{ github.ref }}. Inside workflow_call, github.workflow is the
+# caller's name, so a group built from it can match the caller and GitHub
+# cancels the run with a concurrency deadlock. A called workflow's
+# concurrency applies to the whole caller run. cancel-in-progress stays true
+# so a new commit on the same ref replaces a stale test. The side effect is
+# that force-pushing the same tag can cancel an in-progress release through
+# this group. Normal tag pushes use a unique ref and do not collide. Do not
+# remove this group, and do not set cancel-in-progress to false to "fix" that.
+#
+# The suite is go test ./... with -race left off. golangci-lint and go vet
+# are not separate steps. Action majors float so a patch release applies;
+# full commit SHAs are not pinned. On 2026-09-23 GitHub removed Node 20 from
+# hosted runners, so checkout and setup-go are the Node 24 majors (v7).
+# go-version-file reads the go line in go.mod. Do not also set go-version.
+# The runner is ubuntu-26.04, not ubuntu-latest: ubuntu-latest moves to
+# Ubuntu 26 during October 2026, and this repository already pins the image.
+# Timeout 15 bounds a hung test; the suite itself is seconds.
+
+on:
+  workflow_call:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retrogo-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
