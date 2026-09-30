@@ -14,8 +14,8 @@ import (
 const cdnURLEnv = "ASSET_CDN_URL"
 
 // web/dist holds the files from `bun run build` (web/build.ts): esbuild
-// bundles and the copied static assets. Only .gitkeep is committed, so run
-// the frontend build before compiling.
+// bundles and copy-loader assets. Only .gitkeep is committed, so run the
+// frontend build before compiling.
 //
 //go:embed all:web/dist
 var staticFS embed.FS

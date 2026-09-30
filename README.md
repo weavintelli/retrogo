@@ -6,7 +6,7 @@ Retro on the server, modern in the build:
 
 - **std `net/http` only** — Go 1.22+ pattern routing (`GET /{$}`, `GET /static/`, `{id}` wildcards), security headers, graceful shutdown with no deadline. No web framework, no router dependency.
 - **esbuild multi-entry build** — every `.ts` / `.tsx` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` into `web/dist/<name>-<hash>.<ext>`. Script entries are minified IIFEs. `main.css` is compiled by the official Tailwind v4 PostCSS plugin, including build-time lucide icons via `@iconify/tailwind4`. Interactive pieces are Preact islands mounted into the Go templates. Bun installs dependencies and runs the script.
-- **Copied static files** — every file in `web/src/assets/` (images, `.asc`, fonts, and any other extension) is copied unchanged to `web/dist/<name>-<hash>.<ext>`. `<name>` drops only the last extension, so `hero.2x.webp` becomes `hero.2x-<hash>.webp`. The hash is 8 characters of base32 (`A–Z`, `2–7`): XXH64 of the raw bytes, the same encoding esbuild uses for `[hash]` on a copy. Nothing in that directory is parsed or transformed. Dotfiles and nested directories are left out; `/static/` serves a flat directory.
+- **Copied static files** — every file in `web/src/assets/` (images, `.asc`, fonts, and any other extension) is an esbuild entry with the `copy` loader. esbuild does not parse or bundle it. The output uses the same `entryNames` pattern as the JS and CSS bundles, `web/dist/<name>-<hash>.<ext>`. `<name>` drops only the last extension, so `hero.2x.webp` becomes `hero.2x-<hash>.webp`. Dotfiles and nested directories are left out; `/static/` serves a flat directory.
 - **`html/template` views** — embedded with `//go:embed`, referencing files by source name and extension: `{{asset "main.css"}}`, `{{asset "home.js"}}`, `{{asset "logo.png"}}`, `{{asset "file.asc"}}`. Hash resolution happens in `web_static.go`. A missing file still renders `/static/<name>.<ext>` and 404s until the build has copied or bundled it.
 - **Immutable static serving** — `web/dist` is embedded (`//go:embed all:web/dist`) and served at `GET /static/` with `Cache-Control: public, max-age=31536000, immutable`, so hashed assets are cached forever and new builds get new URLs.
 - **Optional CDN prefix** — set `ASSET_CDN_URL` to a base URL and `{{asset}}` emits that base plus `/static/<file>`. Unset or empty keeps same-origin `/static/` URLs.
@@ -19,8 +19,8 @@ Retro on the server, modern in the build:
 | `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
 | `web_tmpl.go` | `//go:embed web/view/*.html`, template func `asset` |
 | `web_static.go` | `//go:embed all:web/dist`, `<name>-<hash>.<ext>` matching, `/static/` handler, `ASSET_CDN_URL` prefix |
-| `web/build.ts` | esbuild for entries, then a byte copy of `src/assets` into `dist/`. Bun only runs it |
-| `web/static-assets.ts` | Content hash and copy. No esbuild |
+| `web/build.ts` | esbuild: hashed bundles, and `copy` entries from `src/assets`. Bun only runs it |
+| `web/static-assets.ts` | Lists `src/assets` and returns them to esbuild with the `copy` loader |
 | `web/src/entries/` | One file per bundle: page entries plus `main.css` (Tailwind v4) |
 | `web/src/assets/` | Copy-only files (`logo.png`, `file.asc`, …). Not an esbuild entry |
 | `web/src/components/` | Preact islands imported by a page entry |
@@ -89,7 +89,7 @@ The runner builds the frontend with Bun and the binary with Go, then the `Docker
 
 ## Adding a static file
 
-1. Put the file in `web/src/assets/`, for example `logo.png` or `file.asc`. The copy is every top-level file with an extension, not a fixed list of image types.
+1. Put the file in `web/src/assets/`, for example `logo.png` or `file.asc`. esbuild's `copy` loader takes every top-level file with an extension, not a fixed list of image types.
 2. Reference the source name. `ASSET_CDN_URL`, when set, prefixes this URL the same way it prefixes a script or stylesheet.
 
 ```html

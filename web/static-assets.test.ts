@@ -4,73 +4,29 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import * as esbuild from "esbuild";
 import {
-  assetContentHash,
-  cleanCopiedAssets,
+  assertNoAssetCollision,
+  cleanOutput,
   collidingAssetNames,
-  copyStaticAssets,
-  hashedAssetFilename,
-  isBundleOutput,
+  listStaticAssets,
   logicalBundleName,
+  staticAssetPlugin,
 } from "./static-assets.ts";
 
-const vectors: { name: string; bytes: Uint8Array; hash: string }[] = [
-  { name: "logo.png", bytes: new TextEncoder().encode("hello asset\n"), hash: "FP6SD33N" },
-  {
-    name: "file.asc",
-    bytes: new TextEncoder().encode("-----BEGIN PGP SIGNATURE-----\n"),
-    hash: "FNLXQN5F",
-  },
-  { name: "hero.2x.webp", bytes: new TextEncoder().encode("a.b"), hash: "ACI3MOJ2" },
-  { name: "empty.dat", bytes: new Uint8Array(), hash: "55DNWN2R" },
-  { name: "bin.woff2", bytes: Uint8Array.from({ length: 256 }, (_, i) => i), hash: "D6WL5BAG" },
+const vectors: { name: string; bytes: Uint8Array }[] = [
+  { name: "logo.png", bytes: new TextEncoder().encode("hello asset\n") },
+  { name: "file.asc", bytes: new TextEncoder().encode("-----BEGIN PGP SIGNATURE-----\n") },
+  { name: "hero.2x.webp", bytes: new TextEncoder().encode("a.b") },
+  { name: "empty.dat", bytes: new Uint8Array() },
+  { name: "bin.woff2", bytes: Uint8Array.from({ length: 256 }, (_, i) => i) },
+  { name: "vendor.js", bytes: new TextEncoder().encode("not a program") },
 ];
 
-describe("assetContentHash", () => {
-  for (const vector of vectors) {
-    test(vector.name, () => {
-      expect(assetContentHash(vector.bytes)).toBe(vector.hash);
-      expect(hashedAssetFilename(vector.name, vector.bytes)).toBe(
-        `${vector.name.slice(0, vector.name.lastIndexOf("."))}-${vector.hash}${vector.name.slice(vector.name.lastIndexOf("."))}`,
-      );
-    });
-  }
-
-  test("matches esbuild copy loader", async () => {
-    const root = await mkdtemp(join(tmpdir(), "retrogo-hash-"));
-    const source = join(root, "src");
-    const out = join(root, "out");
-    await mkdir(source);
-    try {
-      const entryPoints: string[] = [];
-      const loader: Record<string, "copy"> = {};
-      for (const vector of vectors) {
-        const path = join(source, vector.name);
-        await writeFile(path, vector.bytes);
-        entryPoints.push(path);
-        loader[vector.name.slice(vector.name.lastIndexOf("."))] = "copy";
-      }
-      const result = await esbuild.build({
-        entryPoints,
-        outdir: out,
-        entryNames: "[name]-[hash]",
-        assetNames: "[name]-[hash]",
-        loader,
-        bundle: true,
-        write: true,
-        metafile: true,
-      });
-      const built = Object.keys(result.metafile?.outputs ?? {})
-        .map((path) => path.slice(path.lastIndexOf("/") + 1))
-        .sort();
-      const copied = vectors
-        .map((vector) => hashedAssetFilename(vector.name, vector.bytes))
-        .sort();
-      expect(built).toEqual(copied);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-});
+function outputNames(metafile: esbuild.Metafile | undefined): string[] {
+  return Object.keys(metafile?.outputs ?? {})
+    .filter((file) => !file.endsWith(".map"))
+    .map((file) => file.slice(file.lastIndexOf("/") + 1))
+    .sort();
+}
 
 describe("logicalBundleName", () => {
   test("script entries emit js and css stays css", () => {
@@ -80,72 +36,163 @@ describe("logicalBundleName", () => {
   });
 });
 
-describe("copyStaticAssets", () => {
-  test("copies hashed bytes and drops the previous hash", async () => {
+describe("listStaticAssets", () => {
+  test("skips dotfiles, directories, and extensionless names", async () => {
+    const root = await mkdtemp(join(tmpdir(), "retrogo-list-"));
+    await mkdir(join(root, "nested"));
+    await writeFile(join(root, ".gitkeep"), "");
+    await writeFile(join(root, "README"), "no extension");
+    await writeFile(join(root, "logo.png"), "x");
+    await writeFile(join(root, "file.asc"), "y");
+    try {
+      expect(await listStaticAssets(root)).toEqual(["file.asc", "logo.png"]);
+      expect(await listStaticAssets(join(root, "missing"))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("static asset copy loader", () => {
+  test("matches loader copy and does not parse the file", async () => {
     const root = await mkdtemp(join(tmpdir(), "retrogo-copy-"));
     const source = join(root, "assets");
-    const dist = join(root, "dist");
+    const out = join(root, "out");
+    const native = join(root, "native");
     await mkdir(source);
-    await mkdir(dist);
-    await writeFile(join(dist, ".gitkeep"), "");
-    await writeFile(join(dist, "home-AAAAAAAA.js"), "bundle");
-    await writeFile(join(source, ".gitkeep"), "");
-    await writeFile(join(source, "logo.png"), vectors[0]!.bytes);
-    await writeFile(join(source, "file.asc"), vectors[1]!.bytes);
-    await mkdir(join(source, "nested"));
-    await writeFile(join(source, "README"), "no extension");
+    await writeFile(join(source, "home.ts"), "console.log(1)\n");
+    const assetPaths: string[] = [];
+    const loader: Record<string, "copy"> = {};
+    for (const vector of vectors) {
+      await writeFile(join(source, vector.name), vector.bytes);
+      assetPaths.push(join(source, vector.name));
+      loader[vector.name.slice(vector.name.lastIndexOf("."))] = "copy";
+    }
     try {
-      const first = await copyStaticAssets(source, dist, ["home.js", "main.css"]);
-      expect(first.sort()).toEqual(["file-FNLXQN5F.asc", "logo-FP6SD33N.png"]);
-      expect(await readFile(join(dist, "logo-FP6SD33N.png"), "utf8")).toBe("hello asset\n");
-      expect(await readFile(join(dist, "home-AAAAAAAA.js"), "utf8")).toBe("bundle");
-      expect(await readFile(join(dist, ".gitkeep"), "utf8")).toBe("");
-
-      await writeFile(join(source, "logo.png"), "changed");
-      await writeFile(join(source, "vendor.js"), "plain");
-      await writeFile(join(dist, "vendor-AAAAAAAA.js"), "stale");
-      await cleanCopiedAssets(dist, ["home.js", "main.css"]);
-      expect(await readFile(join(dist, "home-AAAAAAAA.js"), "utf8")).toBe("bundle");
-      await expect(readFile(join(dist, "vendor-AAAAAAAA.js"))).rejects.toThrow();
-      const second = await copyStaticAssets(source, dist, ["home.js", "main.css"]);
-      expect(second.sort()).toEqual([
-        "file-FNLXQN5F.asc",
-        hashedAssetFilename("logo.png", new TextEncoder().encode("changed")),
-        hashedAssetFilename("vendor.js", new TextEncoder().encode("plain")),
-      ]);
-      expect(isBundleOutput("home-AAAAAAAA.js", ["home.js"])).toBe(true);
-      expect(isBundleOutput("home-AAAAAAAA.js.map", ["home.js"])).toBe(true);
-      expect(isBundleOutput(hashedAssetFilename("vendor.js", new TextEncoder().encode("plain")), ["home.js"])).toBe(
-        false,
+      const copied = await esbuild.build({
+        entryPoints: [join(source, "home.ts"), ...assetPaths],
+        outdir: out,
+        entryNames: "[name]-[hash]",
+        bundle: true,
+        format: "iife",
+        write: true,
+        metafile: true,
+        plugins: [
+          staticAssetPlugin({ distDir: out, assetPaths, bundleNames: ["home.js"] }),
+        ],
+        logLevel: "silent",
+      });
+      const direct = await esbuild.build({
+        absWorkingDir: source,
+        entryPoints: vectors.map((vector) => vector.name),
+        outdir: native,
+        entryNames: "[name]-[hash]",
+        bundle: true,
+        loader,
+        write: true,
+        metafile: true,
+        logLevel: "silent",
+      });
+      const copiedAssets = outputNames(copied.metafile).filter((name) => !name.startsWith("home-"));
+      expect(copiedAssets).toEqual(outputNames(direct.metafile));
+      expect(outputNames(copied.metafile).some((name) => name.startsWith("home-") && name.endsWith(".js"))).toBe(
+        true,
       );
-      await expect(readFile(join(dist, "logo-FP6SD33N.png"))).rejects.toThrow();
-      expect(await readFile(join(dist, "home-AAAAAAAA.js"), "utf8")).toBe("bundle");
+      const vendor = copiedAssets.find((name) => name.startsWith("vendor-") && name.endsWith(".js"));
+      expect(vendor).toBeDefined();
+      expect(await readFile(join(out, vendor!))).toEqual(Buffer.from("not a program"));
+      const home = outputNames(copied.metafile).find((name) => name.startsWith("home-"));
+      expect(await readFile(join(out, home!), "utf8")).toContain("console.log");
+      for (const vector of vectors) {
+        if (vector.name === "vendor.js") continue;
+        const ext = vector.name.slice(vector.name.lastIndexOf("."));
+        const stem = vector.name.slice(0, vector.name.lastIndexOf("."));
+        const file = copiedAssets.find((name) => name.startsWith(`${stem}-`) && name.endsWith(ext));
+        expect(file, vector.name).toBeDefined();
+        expect(await readFile(join(out, file!))).toEqual(Buffer.from(vector.bytes));
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("refuses a name esbuild will also emit", async () => {
+  test("refuses a bundle name before deleting the output", async () => {
     const root = await mkdtemp(join(tmpdir(), "retrogo-collide-"));
     const source = join(root, "assets");
-    const dist = join(root, "dist");
+    const out = join(root, "out");
     await mkdir(source);
+    await mkdir(out);
+    await writeFile(join(out, "keep.js"), "keep");
     await writeFile(join(source, "home.js"), "not a bundle");
-    await writeFile(join(source, "logo.png"), vectors[0]!.bytes);
+    await writeFile(join(source, "logo.png"), "x");
     try {
-      await expect(copyStaticAssets(source, dist, ["home.js"])).rejects.toThrow(/home\.js/);
-      expect(collidingAssetNames(["home.js", "logo.png"], ["home.js", "main.css"])).toEqual(["home.js"]);
-      await expect(readFile(join(dist, "logo-FP6SD33N.png"))).rejects.toThrow();
+      expect(collidingAssetNames(["home.js", "logo.png"], ["home.js"])).toEqual(["home.js"]);
+      assertNoAssetCollision(["logo.png"], ["home.js"]);
+      await expect(
+        esbuild.build({
+          entryPoints: [join(source, "home.js"), join(source, "logo.png")],
+          outdir: out,
+          entryNames: "[name]-[hash]",
+          bundle: true,
+          write: true,
+          plugins: [
+            staticAssetPlugin({
+              distDir: out,
+              assetPaths: [join(source, "home.js"), join(source, "logo.png")],
+              bundleNames: ["home.js"],
+            }),
+          ],
+          logLevel: "silent",
+        }),
+      ).rejects.toThrow(/home\.js/);
+      expect(await readFile(join(out, "keep.js"), "utf8")).toBe("keep");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("missing source directory copies nothing", async () => {
-    const root = await mkdtemp(join(tmpdir(), "retrogo-empty-"));
+  test("drops a stale hashed file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "retrogo-stale-"));
+    const source = join(root, "assets");
+    const out = join(root, "out");
+    await mkdir(source);
+    await mkdir(out);
+    await writeFile(join(out, ".gitkeep"), "");
+    await writeFile(join(out, "logo-OLDHASH1.png"), "stale");
+    await writeFile(join(source, "logo.png"), "fresh");
+    const assetPath = join(source, "logo.png");
     try {
-      expect(await copyStaticAssets(join(root, "missing"), join(root, "dist"))).toEqual([]);
-      await expect(cleanCopiedAssets(join(root, "missing"))).resolves.toBeUndefined();
+      await esbuild.build({
+        entryPoints: [assetPath],
+        outdir: out,
+        entryNames: "[name]-[hash]",
+        bundle: true,
+        write: true,
+        metafile: true,
+        plugins: [
+          staticAssetPlugin({ distDir: out, assetPaths: [assetPath], bundleNames: [] }),
+        ],
+        logLevel: "silent",
+      });
+      expect(await readFile(join(out, ".gitkeep"), "utf8")).toBe("");
+      await expect(readFile(join(out, "logo-OLDHASH1.png"))).rejects.toThrow();
+      const written = (await listStaticAssets(out)).filter((name) => name.startsWith("logo-"));
+      expect(written).toHaveLength(1);
+      expect(await readFile(join(out, written[0]!), "utf8")).toBe("fresh");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("cleanOutput keeps dotfiles", async () => {
+    const root = await mkdtemp(join(tmpdir(), "retrogo-clean-"));
+    await writeFile(join(root, ".gitkeep"), "");
+    await writeFile(join(root, "gone.txt"), "x");
+    try {
+      await cleanOutput(root);
+      expect(await readFile(join(root, ".gitkeep"), "utf8")).toBe("");
+      await expect(readFile(join(root, "gone.txt"))).rejects.toThrow();
+      await expect(cleanOutput(join(root, "missing"))).resolves.toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }
