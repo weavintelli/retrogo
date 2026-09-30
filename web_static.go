@@ -13,8 +13,9 @@ import (
 // Unset or empty keeps same-origin paths served by this process.
 const cdnURLEnv = "ASSET_CDN_URL"
 
-// web/dist holds the bundles from `bun run build` (web/build.ts).
-// Only .gitkeep is committed, so run the frontend build before compiling.
+// web/dist holds the files from `bun run build` (web/build.ts): esbuild
+// bundles and the copied static assets. Only .gitkeep is committed, so run
+// the frontend build before compiling.
 //
 //go:embed all:web/dist
 var staticFS embed.FS
@@ -86,8 +87,8 @@ func isAssetHash(s string) bool {
 	return true
 }
 
-// asset resolves a dist file ("home.js", "main.css", "logo.png") to its URL
-// ("/static/home-1a2b3c4d.js", or that path prefixed with ASSET_CDN_URL).
+// asset resolves a dist file ("home.js", "main.css", "logo.png", "file.asc")
+// to its URL ("/static/home-1a2b3c4d.js", or that path prefixed with ASSET_CDN_URL).
 // The extension is the suffix after the last dot, so "hero.2x.webp" matches
 // "hero.2x-<hash>.webp". A hashed file wins over the plain name. When nothing
 // matches, the unhashed name is returned and 404s until the file is in web/dist.

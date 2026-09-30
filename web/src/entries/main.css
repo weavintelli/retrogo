@@ -13,6 +13,8 @@
 /* dist holds this file's own output. Scanning it feeds generated class
    names back into the next build. */
 @source not "../../dist";
+/* Copied bytes (images, .asc). Not class names, and binary is noise. */
+@source not "../assets";
 
 /* Dark chrome. */
 :root {
