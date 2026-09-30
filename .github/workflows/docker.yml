@@ -26,9 +26,13 @@ name: docker
 # for the job; they do not merge. The test job repeats contents: read and
 # must not inherit packages: write. packages: write is the GHCR push.
 # id-token: write and attestations: write are required because the merged
-# manifest is attested after the platform builds. actions: write is required
-# because a narrowed token cannot save the Actions cache that
-# docker-publish.yml writes; without it cache-to fails the build.
+# manifest is attested after the platform builds. artifact-metadata: write
+# is required on that same token so attest-build-provenance can persist the
+# linked-artifacts storage record. push-to-registry is true, and without
+# this scope the attestation is still signed while the run warns that no
+# storage record was saved. actions: write is required because a narrowed
+# token cannot save the Actions cache that docker-publish.yml writes;
+# without it cache-to fails the build.
 # The concurrency group is docker-${{ github.ref }}, distinct from
 # retrogo-test-${{ github.ref }}. cancel-in-progress replaces an in-progress
 # :latest build when a newer commit lands on main. There is no
@@ -45,6 +49,7 @@ permissions:
   packages: write
   attestations: write
   id-token: write
+  artifact-metadata: write
   actions: write
 
 concurrency:
@@ -64,5 +69,6 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      artifact-metadata: write
       actions: write
     uses: ./.github/workflows/docker-publish.yml

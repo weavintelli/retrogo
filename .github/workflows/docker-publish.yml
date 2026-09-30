@@ -5,7 +5,8 @@ name: docker-publish
 # workflow_call-only file does not appear as its own button in the Actions
 # tab. A called workflow cannot widen the caller's token, so both callers
 # grant contents: read, packages: write, attestations: write, id-token: write,
-# and actions: write, and this file declares the same ceiling.
+# artifact-metadata: write, and actions: write, and this file declares the
+# same ceiling.
 #
 # Tag policy, and why each piece stays:
 #   Push to the default branch: latest
@@ -48,8 +49,12 @@ name: docker-publish
 # with provenance and SBOM off. Provenance on a by-digest push adds an
 # attestation manifest that imagetools create then publishes as
 # unknown/unknown. The merge job attests the manifest list instead, which is
-# why id-token and attestations stay granted. SBOM stays off; it is not part
-# of this profile and it adds build time.
+# why id-token and attestations stay granted. artifact-metadata: write stays
+# on that job too: push-to-registry creates a linked-artifacts storage
+# record, and a token without the scope warns "no artifacts found" after the
+# attestation is signed. The build job does not attest, so it does not get
+# id-token, attestations, or artifact-metadata. SBOM stays off; it is not
+# part of this profile and it adds build time.
 #
 # Labels are passed into each platform build. Annotations are passed there
 # and again onto the index at merge time, so the registry record matches
@@ -77,6 +82,7 @@ permissions:
   packages: write
   attestations: write
   id-token: write
+  artifact-metadata: write
   actions: write
 
 env:
@@ -218,6 +224,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      artifact-metadata: write
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
