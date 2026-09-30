@@ -3,13 +3,16 @@
   "private": true,
   "scripts": {
     "build": "bun run build.ts",
-    "dev": "BUN_WATCH=1 bun --watch run build.ts",
+    "dev": "bun run build.ts --watch",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.137",
     "@iconify/tailwind4": "^1.2.3",
-    "bun-plugin-tailwind": "^0.1.2",
+    "@tailwindcss/postcss": "^4.3.3",
+    "esbuild": "^0.28.2",
+    "postcss": "^8.5.28",
+    "preact": "^11.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   }

@@ -1,40 +1,75 @@
-// Bundles every entry in src/entries into a self-contained IIFE per entry in
-// dist/, named "<name>-<content-hash>.<ext>" so Go can serve them with
-// immutable caching and templates only need to match the entry name prefix.
-// main.css is the site-wide stylesheet: Tailwind utilities scanned from the
-// Go templates.
+// Bundles every entry in src/entries into dist/<name>-<hash>.<ext>.
+// JS and TSX entries are self-contained IIFEs. CSS entries are compiled by
+// the official Tailwind PostCSS plugin, then emitted by esbuild with the
+// same hashed name. Go serves those files and resolves the hash from the
+// entry name, so the output shape stays <name>-<hash>.<ext>.
 //
-//   bun run build.ts          one-off production build (minified)
-//   bun --watch run build.ts  dev loop (rebuilds on change, inline sourcemaps)
+//   bun run build.ts           production build (minified)
+//   bun run build.ts --watch   rebuild on change
 
-import { readdir, rm } from "node:fs/promises";
-import tailwind from "bun-plugin-tailwind";
+import { readFile, readdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import * as esbuild from "esbuild";
+import postcss from "postcss";
+import tailwindcss from "@tailwindcss/postcss";
 
-const dev = process.argv.includes("--watch") || !!process.env.BUN_WATCH;
-
+const watch = process.argv.includes("--watch");
 const entryDir = "src/entries";
+
 const entrypoints = (await readdir(entryDir, { withFileTypes: true }))
-  .filter((e) => e.isFile() && (e.name.endsWith(".ts") || e.name.endsWith(".css")))
-  .map((e) => e.name)
+  .filter((entry) => entry.isFile() && /\.(ts|tsx|css)$/.test(entry.name))
+  .map((entry) => entry.name)
   .sort()
-  .map((name) => `${entryDir}/${name}`);
+  .map((name) => join(entryDir, name));
 
 if (entrypoints.length === 0) {
   console.error(`no entries found in ${entryDir}`);
   process.exit(1);
 }
 
-// Drop stale hashed outputs from previous builds.
-try {
-  for (const ent of await readdir("dist", { withFileTypes: true })) {
-    if (!ent.isFile()) continue;
-    if (ent.name.endsWith(".js") || ent.name.endsWith(".css") || ent.name.endsWith(".map")) {
-      await rm(`dist/${ent.name}`);
-    }
+const tailwind = postcss([
+  tailwindcss({ optimize: watch ? false : { minify: true } }),
+]);
+
+const tailwindPlugin: esbuild.Plugin = {
+  name: "tailwind",
+  setup(build) {
+    build.onStart(async () => {
+      await cleanDist();
+    });
+    build.onLoad({ filter: /\.css$/ }, async (args) => {
+      const source = await readFile(args.path, "utf8");
+      const result = await tailwind.process(source, { from: args.path });
+      const watchFiles = [args.path];
+      for (const message of result.messages) {
+        if (message.type === "dependency" && message.file) watchFiles.push(message.file);
+      }
+      return { contents: result.css, loader: "css", watchFiles };
+    });
+    build.onEnd((result) => {
+      for (const file of Object.keys(result.metafile?.outputs ?? {})) {
+        if (file.endsWith(".map")) continue;
+        console.log("built", file);
+      }
+    });
+  },
+};
+
+async function cleanDist(): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir("dist", { withFileTypes: true });
+  } catch (err) {
+    if (isEnoent(err)) return;
+    throw err;
   }
-} catch (err) {
-  // dist does not exist yet; Bun.build creates it.
-  if (!isEnoent(err)) throw err;
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (!entry.isFile()) return;
+      if (entry.name === ".gitkeep") return;
+      if (/\.(js|css|map)$/.test(entry.name)) await rm(join("dist", entry.name));
+    }),
+  );
 }
 
 function isEnoent(err: unknown): boolean {
@@ -46,19 +81,28 @@ function isEnoent(err: unknown): boolean {
   );
 }
 
-const result = await Bun.build({
-  entrypoints,
+const options: esbuild.BuildOptions = {
+  entryPoints: entrypoints,
   outdir: "dist",
-  naming: "[name]-[hash].[ext]",
-  target: "browser",
+  entryNames: "[name]-[hash]",
+  bundle: true,
   format: "iife",
-  minify: !dev,
-  sourcemap: dev ? "inline" : "none",
-  plugins: [tailwind],
-});
+  target: "es2020",
+  platform: "browser",
+  jsx: "automatic",
+  jsxImportSource: "preact",
+  minify: !watch,
+  sourcemap: watch ? "inline" : false,
+  metafile: true,
+  plugins: [tailwindPlugin],
+  logLevel: "info",
+};
 
-if (!result.success) {
-  for (const msg of result.logs) console.error(msg);
-  process.exit(1);
+if (watch) {
+  const ctx = await esbuild.context(options);
+  await ctx.watch();
+  console.log("watching");
+  await new Promise(() => {});
+} else {
+  await esbuild.build(options);
 }
-for (const out of result.outputs) console.log("built", out.path);

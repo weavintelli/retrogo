@@ -10,6 +10,9 @@
 @source "../../view";
 @source "../../src";
 @source "../../../*.go";
+/* dist holds this file's own output. Scanning it feeds generated class
+   names back into the next build. */
+@source not "../../dist";
 
 /* Dark chrome. */
 :root {
