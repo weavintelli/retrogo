@@ -64,10 +64,9 @@ name: Version tag
 # contents: write because creating a release needs it. Job permissions
 # replace that set; they do not merge. test and docker repeat contents: read
 # and must not inherit contents: write. packages, id-token, attestations,
-# artifact-metadata, and actions: write are what build-image.yml needs
-# for the push, the manifest attestation, its storage record, and its
-# caches (runtime image layers, the Go build cache, and the Bun package
-# cache).
+# and actions: write are what build-image.yml needs for the push, the
+# manifest attestation, and its caches (runtime image layers, the Go build
+# cache, and the Bun package cache). The attestation is not pushed to GHCR.
 # The release job keeps only
 # contents: write. softprops/action-gh-release v2 is the last Node 20
 # release and is unmaintained; this file uses v3.
@@ -83,7 +82,6 @@ permissions:
   packages: write
   attestations: write
   id-token: write
-  artifact-metadata: write
   actions: write
 
 concurrency:
@@ -133,7 +131,6 @@ jobs:
       packages: write
       attestations: write
       id-token: write
-      artifact-metadata: write
       actions: write
     uses: ./.github/workflows/build-image.yml
 
