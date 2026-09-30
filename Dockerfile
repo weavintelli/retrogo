@@ -1,4 +1,4 @@
-FROM oven/bun:1 AS static
+FROM oven/bun:1.4.2 AS static
 # Mirror the repo layout: main.css's tailwind @source glob ("../../../*.go")
 # scans the top-level Go files, so the Go files must sit next to web/ —
 # resolving past them (to the container root /) walks the whole filesystem
@@ -10,7 +10,7 @@ COPY web/ ./
 COPY *.go /repo/
 RUN bun run build
 
-FROM golang:1.27 AS builder
+FROM golang:1.27.1 AS builder
 ENV CGO_ENABLED=0
 WORKDIR /go/src/app
 COPY . .
