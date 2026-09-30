@@ -1,5 +1,9 @@
-name: release
+name: Version tag
 
+# name is the Actions title. It is not the filename. The four titles are
+# Test suite, Default branch, Container image, and Version tag. Do not set
+# name back to the filename.
+#
 # A semver tag runs version, then tests, then the same docker publish main
 # uses, then a GitHub Release. The release is created only after the image
 # push has succeeded, so the release page does not advertise an image tag
@@ -46,12 +50,12 @@ name: release
 # script would die before the error line. metadata-action rejects the same
 # leading-zero forms. Catching them here avoids an empty tag list later.
 #
-# Matrix fail-fast stays at the default inside docker-publish.yml. One arch
+# Matrix fail-fast stays at the default inside build-image.yml. One arch
 # that does not build stops the other. Checkout depth stays at the default.
 # Do not set fetch-depth: 0. metadata-action reads the tag from GITHUB_REF.
 #
 # cancel-in-progress is false so this file's own group does not cancel a tag
-# build. test.yml still sets it true, so force-pushing the same tag can
+# build. ci.yml still sets it true, so force-pushing the same tag can
 # cancel the in-progress release through the test group. There is no
 # workflow_dispatch: a manual run would publish whatever tag filter happened
 # to match, from an arbitrary ref.
@@ -60,7 +64,7 @@ name: release
 # contents: write because creating a release needs it. Job permissions
 # replace that set; they do not merge. test and docker repeat contents: read
 # and must not inherit contents: write. packages, id-token, attestations,
-# artifact-metadata, and actions: write are what docker-publish.yml needs
+# artifact-metadata, and actions: write are what build-image.yml needs
 # for the push, the manifest attestation, its storage record, and its
 # caches (runtime image layers, the Go build cache, and the Bun package
 # cache).
@@ -120,7 +124,7 @@ jobs:
     needs: version
     permissions:
       contents: read
-    uses: ./.github/workflows/test.yml
+    uses: ./.github/workflows/ci.yml
 
   docker:
     needs: test
@@ -131,7 +135,7 @@ jobs:
       id-token: write
       artifact-metadata: write
       actions: write
-    uses: ./.github/workflows/docker-publish.yml
+    uses: ./.github/workflows/build-image.yml
 
   release:
     needs: [version, docker]
