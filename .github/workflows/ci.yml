@@ -1,12 +1,16 @@
-name: test
+name: Test suite
 
+# name is the Actions title. It is not the filename. The four titles are
+# Test suite, Default branch, Container image, and Version tag. Do not set
+# name back to the filename.
+#
 # Events are split across four files so a failing test cannot publish.
-# test.yml runs on pull requests and on pushes to any branch except main.
-# A push to main starts docker.yml, which calls this file before it
+# ci.yml runs on pull requests and on pushes to any branch except main.
+# A push to main starts push-main.yml, which calls this file before it
 # publishes, so listing main here too would run the suite twice. A tag ref
-# is not a branch, so a tag push does not start this file; release.yml calls
+# is not a branch, so a tag push does not start this file; cut-release.yml calls
 # it. workflow_call filters are not applied when this file is called, so
-# branches-ignore does not block docker.yml or release.yml.
+# branches-ignore does not block push-main.yml or cut-release.yml.
 #
 # workflow_run was rejected as the publish gate. It reads the workflow file
 # from the default branch only, checks out github.event.workflow_run.head_sha
@@ -19,7 +23,7 @@ name: test
 #
 # This file grants only contents: read. That is enough to check out and
 # test. Publish permissions are not granted here. A called workflow can only
-# narrow the caller's token, never widen it, so docker.yml and release.yml
+# narrow the caller's token, never widen it, so push-main.yml and cut-release.yml
 # must grant contents: read on the job that calls this file. secrets: inherit
 # is not required; secrets.GITHUB_TOKEN is already available.
 #

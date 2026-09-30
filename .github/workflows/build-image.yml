@@ -1,6 +1,11 @@
-name: docker-publish
+name: Container image
 
-# Called by docker.yml (push to main) and release.yml (semver tag). This is
+# name is the Actions title. It is not the filename. The four titles are
+# Test suite, Default branch, Container image, and Version tag. Do not set
+# name back to the filename. This file is workflow_call only, so the title
+# does not get its own button; callers still show it on the called jobs.
+#
+# Called by push-main.yml (push to main) and cut-release.yml (semver tag). This is
 # the only place image tags and the image build are defined. A
 # workflow_call-only file does not appear as its own button in the Actions
 # tab. A called workflow cannot widen the caller's token, so both callers
