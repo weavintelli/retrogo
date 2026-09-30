@@ -56,3 +56,7 @@ Note: the bun stage mirrors the repo layout (`WORKDIR /repo/web`, `COPY *.go /re
 2. Add a view `web/view/about.html` with `{{template "head" .}}` and `<script src="{{jsAsset "about"}}" defer></script>`.
 3. Add an entry `web/src/entries/about.ts`.
 4. `bun run build` — the new `about-<hash>.js` is picked up automatically.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Shenzhen WeavIntelli Software Co., Ltd.
