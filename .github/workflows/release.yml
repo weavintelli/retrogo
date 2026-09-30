@@ -60,8 +60,9 @@ name: release
 # contents: write because creating a release needs it. Job permissions
 # replace that set; they do not merge. test and docker repeat contents: read
 # and must not inherit contents: write. packages, id-token, attestations,
-# and actions: write are what docker-publish.yml needs for the push, the
-# manifest attestation, and its cache. The release job keeps only
+# artifact-metadata, and actions: write are what docker-publish.yml needs
+# for the push, the manifest attestation, its storage record, and its cache.
+# The release job keeps only
 # contents: write. softprops/action-gh-release v2 is the last Node 20
 # release and is unmaintained; this file uses v3.
 
@@ -76,6 +77,7 @@ permissions:
   packages: write
   attestations: write
   id-token: write
+  artifact-metadata: write
   actions: write
 
 concurrency:
@@ -125,6 +127,7 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      artifact-metadata: write
       actions: write
     uses: ./.github/workflows/docker-publish.yml
 
