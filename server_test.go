@@ -16,8 +16,8 @@ func TestPages(t *testing.T) {
 		want []string
 	}{
 		{"/healthz", []string{"OK"}},
-		{"/", []string{"Home", "Clicked", jsAsset("home"), cssAsset("main")}},
-		{"/about", []string{"About", "nav-link active", jsAsset("about")}},
+		{"/", []string{"Home", "Clicked", asset("home.js"), asset("main.css")}},
+		{"/about", []string{"About", "nav-link active", asset("about.js")}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
@@ -92,6 +92,7 @@ func TestCDNPrefixedPages(t *testing.T) {
 			csp := rec.Header().Get("Content-Security-Policy")
 			assert.Contains(t, csp, "script-src 'self' https://cdn.example.com")
 			assert.Contains(t, csp, "style-src 'self' https://cdn.example.com")
+			assert.Contains(t, csp, "img-src 'self' data: https://cdn.example.com")
 		})
 	}
 

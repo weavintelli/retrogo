@@ -37,17 +37,19 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Cache-Control", "no-store")
 		scriptSrc := "'self'"
 		styleSrc := "'self'"
-		// Hashed bundles are referenced from ASSET_CDN_URL when that base is
-		// set, so script and style loads from that origin have to be allowed.
+		imgSrc := "'self' data:"
+		// ASSET_CDN_URL prefixes every static URL (scripts, styles, and
+		// images), so those loads from that origin have to be allowed.
 		if origin := cdnOrigin(); origin != "" {
 			scriptSrc += " " + origin
 			styleSrc += " " + origin
+			imgSrc += " " + origin
 		}
 		h.Set("Content-Security-Policy", strings.Join([]string{
 			"default-src 'none'",
 			"script-src " + scriptSrc,
 			"style-src " + styleSrc,
-			"img-src 'self' data:",
+			"img-src " + imgSrc,
 			"connect-src 'self'",
 			"form-action 'self'",
 			"base-uri 'none'",

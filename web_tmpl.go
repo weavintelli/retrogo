@@ -9,6 +9,5 @@ import (
 var webFS embed.FS
 
 var webTmpl = template.Must(template.New("").Funcs(template.FuncMap{
-	"jsAsset":  jsAsset,
-	"cssAsset": cssAsset,
+	"asset": asset,
 }).ParseFS(webFS, "web/view/*.html"))

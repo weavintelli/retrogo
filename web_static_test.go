@@ -59,14 +59,43 @@ func TestPrefixStaticURL(t *testing.T) {
 	}
 }
 
+func TestAssetURL(t *testing.T) {
+	files := []string{
+		"home-1a2b3c4d.js",
+		"main-5e6f7a8b.css",
+		"logo-deadbeef.png",
+		"icon.svg",
+		"hero.2x-abcd.webp",
+	}
+	tests := []struct {
+		file, want string
+	}{
+		{"home.js", "/static/home-1a2b3c4d.js"},
+		{"main.css", "/static/main-5e6f7a8b.css"},
+		{"logo.png", "/static/logo-deadbeef.png"},
+		{"icon.svg", "/static/icon.svg"},
+		{"hero.2x.webp", "/static/hero.2x-abcd.webp"},
+		{"missing.gif", "/static/missing.gif"},
+		{"readme", "/static/readme"},
+		{".gitkeep", "/static/.gitkeep"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			assert.Equal(t, tt.want, assetURL(files, tt.file))
+		})
+	}
+}
+
 func TestAssetURLUsesCDNBase(t *testing.T) {
 	t.Setenv(cdnURLEnv, "")
-	assert.True(t, strings.HasPrefix(jsAsset("home"), "/static/"))
-	assert.True(t, strings.HasPrefix(cssAsset("main"), "/static/"))
+	assert.True(t, strings.HasPrefix(asset("home.js"), "/static/"))
+	assert.True(t, strings.HasPrefix(asset("main.css"), "/static/"))
+	assert.Equal(t, "/static/future-mark.png", asset("future-mark.png"))
 
 	t.Setenv(cdnURLEnv, "https://cdn.example.com/")
-	assert.Equal(t, "https://cdn.example.com"+assetPath("home", "js"), jsAsset("home"))
-	assert.Equal(t, "https://cdn.example.com"+assetPath("main", "css"), cssAsset("main"))
+	assert.Equal(t, "https://cdn.example.com"+assetURL(staticFiles, "home.js"), asset("home.js"))
+	assert.Equal(t, "https://cdn.example.com"+assetURL(staticFiles, "main.css"), asset("main.css"))
+	assert.Equal(t, "https://cdn.example.com/static/future-mark.png", asset("future-mark.png"))
 }
 
 func TestCDNOrigin(t *testing.T) {
