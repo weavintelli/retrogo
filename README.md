@@ -60,7 +60,7 @@ Docker tags drop the leading `v`. There is no commit-SHA tag and no branch-name 
 
 The image is `linux/amd64` and `linux/arm64`, built on native runners (`ubuntu-26.04` and `ubuntu-26.04-arm`) and published as one manifest list. There is no QEMU emulation.
 
-The image is built from the multi-stage `Dockerfile` (`oven/bun` for the frontend, `golang` for the binary, `debian:bookworm-slim` at runtime). The bun stage mirrors the repo layout (`WORKDIR /repo/web`, `COPY *.go /repo/`) because `main.css`'s Tailwind `@source "../../../*.go"` resolves relative to the CSS file — without the Go files next to `web/`, the glob lands on the container root and the build hangs scanning the whole filesystem.
+The image is built from the multi-stage `Dockerfile` (`oven/bun` for the frontend, `golang` for the binary, `debian:13-slim` at runtime). The bun stage mirrors the repo layout (`WORKDIR /repo/web`, `COPY *.go /repo/`) because `main.css`'s Tailwind `@source "../../../*.go"` resolves relative to the CSS file — without the Go files next to `web/`, the glob lands on the container root and the build hangs scanning the whole filesystem.
 
 ## Adding a page
 

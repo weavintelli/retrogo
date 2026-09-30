@@ -61,7 +61,7 @@ name: docker-publish
 # actions: write is granted because cache-to uses the Actions cache and a
 # narrowed token cannot save it otherwise.
 #
-# The runtime image is debian:bookworm-slim, as the Dockerfile already
+# The runtime image is debian:13-slim, as the Dockerfile already
 # specifies. Do not switch it to Alpine as part of the workflow. The build
 # timeout is 45 minutes as a ceiling for a cold bun-and-go image build, not
 # because of QEMU. Matrix fail-fast stays at the default: one arch that does
