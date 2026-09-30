@@ -14,41 +14,71 @@ import (
 //go:embed all:web/dist
 var staticFS embed.FS
 
-func staticDir() fs.FS {
+var distFS = func() fs.FS {
 	sub, err := fs.Sub(staticFS, "web/dist")
 	if err != nil {
 		panic(err)
 	}
 	return sub
-}
+}()
 
 var staticFiles = func() []string {
-	entries, err := fs.ReadDir(staticDir(), ".")
+	entries, err := fs.ReadDir(distFS, ".")
 	if err != nil {
-		return nil
+		panic(err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
 		names = append(names, e.Name())
 	}
 	return names
 }()
 
-// matchAsset finds "<name>-<hash>.<ext>" (or a plain "<name>.<ext>") among
-// files.
+// matchAsset finds "<name>-<hash>.<ext>" or a plain "<name>.<ext>" among
+// files. A hashed bundle wins when both exist. The hash is one Bun content
+// hash ([A-Za-z0-9_-]+), so a name like "home-bad.name.js" does not match.
 func matchAsset(files []string, name, ext string) string {
 	plain := name + "." + ext
 	prefix := name + "-"
 	suffix := "." + ext
+	var hashed string
+	plainFound := false
 	for _, f := range files {
 		if f == plain {
-			return f
+			plainFound = true
+			continue
 		}
-		if strings.HasPrefix(f, prefix) && strings.HasSuffix(f, suffix) {
-			return f
+		if !strings.HasPrefix(f, prefix) || !strings.HasSuffix(f, suffix) || len(f) <= len(prefix)+len(suffix) {
+			continue
+		}
+		if isAssetHash(f[len(prefix):len(f)-len(suffix)]) && hashed == "" {
+			hashed = f
 		}
 	}
+	if hashed != "" {
+		return hashed
+	}
+	if plainFound {
+		return plain
+	}
 	return ""
+}
+
+func isAssetHash(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // jsAsset resolves a bundle entry name ("home") to its served path
@@ -69,11 +99,22 @@ func cssAsset(name string) string {
 	return "/static/" + name + ".css"
 }
 
-// staticHandler serves the embedded bundles. Hashed names are immutable, so
-// responses are cached aggressively (overriding the global no-store header).
+// staticHandler serves the embedded bundles. Hashed names are immutable, so a
+// file that exists is cached aggressively (overriding the global no-store
+// header). Missing paths and directories stay no-store and are not listed.
 func staticHandler() http.Handler {
-	files := http.StripPrefix("/static/", http.FileServerFS(staticDir()))
+	files := http.StripPrefix("/static/", http.FileServerFS(distFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/static/")
+		if name == "" || strings.Contains(name, "/") || strings.HasPrefix(name, ".") || !fs.ValidPath(name) {
+			http.NotFound(w, r)
+			return
+		}
+		info, err := fs.Stat(distFS, name)
+		if err != nil || info.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		files.ServeHTTP(w, r)
 	})

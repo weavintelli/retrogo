@@ -13,10 +13,11 @@ import tailwind from "bun-plugin-tailwind";
 const dev = process.argv.includes("--watch") || !!process.env.BUN_WATCH;
 
 const entryDir = "src/entries";
-const entrypoints = (await readdir(entryDir))
-  .filter((f) => f.endsWith(".ts") || f.endsWith(".css"))
+const entrypoints = (await readdir(entryDir, { withFileTypes: true }))
+  .filter((e) => e.isFile() && (e.name.endsWith(".ts") || e.name.endsWith(".css")))
+  .map((e) => e.name)
   .sort()
-  .map((f) => `${entryDir}/${f}`);
+  .map((name) => `${entryDir}/${name}`);
 
 if (entrypoints.length === 0) {
   console.error(`no entries found in ${entryDir}`);
@@ -25,13 +26,24 @@ if (entrypoints.length === 0) {
 
 // Drop stale hashed outputs from previous builds.
 try {
-  for (const f of await readdir("dist")) {
-    if (f.endsWith(".js") || f.endsWith(".css") || f.endsWith(".map")) {
-      await rm(`dist/${f}`);
+  for (const ent of await readdir("dist", { withFileTypes: true })) {
+    if (!ent.isFile()) continue;
+    if (ent.name.endsWith(".js") || ent.name.endsWith(".css") || ent.name.endsWith(".map")) {
+      await rm(`dist/${ent.name}`);
     }
   }
-} catch {
+} catch (err) {
   // dist does not exist yet; Bun.build creates it.
+  if (!isEnoent(err)) throw err;
+}
+
+function isEnoent(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 const result = await Bun.build({

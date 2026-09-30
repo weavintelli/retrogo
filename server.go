@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 )
+
+type pageData struct {
+	Nav  string
+	Time string
+}
 
 type Server struct{}
 
@@ -32,7 +38,7 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", strings.Join([]string{
 			"default-src 'none'",
 			"script-src 'self'",
-			"style-src 'self' 'unsafe-inline'",
+			"style-src 'self'",
 			"img-src 'self' data:",
 			"connect-src 'self'",
 			"form-action 'self'",
@@ -48,22 +54,26 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "home.html", map[string]any{
-		"Nav":  "home",
-		"Time": time.Now().Format(time.DateTime),
+func (s *Server) handleHome(w http.ResponseWriter, _ *http.Request) {
+	s.render(w, "home.html", pageData{
+		Nav:  "home",
+		Time: time.Now().Format(time.DateTime),
 	})
 }
 
-func (s *Server) handleAbout(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "about.html", map[string]any{
-		"Nav": "about",
-	})
+func (s *Server) handleAbout(w http.ResponseWriter, _ *http.Request) {
+	s.render(w, "about.html", pageData{Nav: "about"})
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
+	var buf bytes.Buffer
+	if err := webTmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		log.Println("template:", name, err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := webTmpl.ExecuteTemplate(w, name, data); err != nil {
-		log.Println("template:", err)
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Println("write:", name, err)
 	}
 }
