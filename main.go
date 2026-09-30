@@ -27,6 +27,10 @@ func main() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	if base := cdnBase(); base != "" {
+		log.Println("static assets prefixed with", base)
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Println("listening on", listen)

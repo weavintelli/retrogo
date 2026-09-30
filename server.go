@@ -35,11 +35,21 @@ func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
+		scriptSrc := "'self'"
+		styleSrc := "'self'"
+		imgSrc := "'self' data:"
+		// ASSET_CDN_URL prefixes every static URL (scripts, styles, and
+		// images), so those loads from that origin have to be allowed.
+		if origin := cdnOrigin(); origin != "" {
+			scriptSrc += " " + origin
+			styleSrc += " " + origin
+			imgSrc += " " + origin
+		}
 		h.Set("Content-Security-Policy", strings.Join([]string{
 			"default-src 'none'",
-			"script-src 'self'",
-			"style-src 'self'",
-			"img-src 'self' data:",
+			"script-src " + scriptSrc,
+			"style-src " + styleSrc,
+			"img-src " + imgSrc,
 			"connect-src 'self'",
 			"form-action 'self'",
 			"base-uri 'none'",

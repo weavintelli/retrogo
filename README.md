@@ -6,17 +6,18 @@ Retro on the server, modern in the build:
 
 - **std `net/http` only** — Go 1.22+ pattern routing (`GET /{$}`, `GET /static/`, `{id}` wildcards), security headers, graceful shutdown with no deadline. No web framework, no router dependency.
 - **esbuild multi-entry build** — every `.ts` / `.tsx` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` into `web/dist/<name>-<hash>.<ext>`. Script entries are minified IIFEs. `main.css` is compiled by the official Tailwind v4 PostCSS plugin, including build-time lucide icons via `@iconify/tailwind4`. Interactive pieces are Preact islands mounted into the Go templates. Bun installs dependencies and runs the script.
-- **`html/template` views** — embedded with `//go:embed`, referencing bundles only by entry name: `{{cssAsset "main"}}`, `{{jsAsset "home"}}`. Hash resolution happens in `web_static.go`.
+- **`html/template` views** — embedded with `//go:embed`, referencing files by name and extension: `{{asset "main.css"}}`, `{{asset "home.js"}}`, `{{asset "logo.png"}}`. Hash resolution happens in `web_static.go`.
 - **Immutable static serving** — `web/dist` is embedded (`//go:embed all:web/dist`) and served at `GET /static/` with `Cache-Control: public, max-age=31536000, immutable`, so hashed assets are cached forever and new builds get new URLs.
+- **Optional CDN prefix** — set `ASSET_CDN_URL` to a base URL and `{{asset}}` emits that base plus `/static/<file>`. Unset or empty keeps same-origin `/static/` URLs.
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `main.go` | Flags (`-listen` / `RETROGO_LISTEN`, default `:8080`), graceful shutdown |
+| `main.go` | Flags (`-listen` / `RETROGO_LISTEN`, default `:8080`), `ASSET_CDN_URL`, graceful shutdown |
 | `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
-| `web_tmpl.go` | `//go:embed web/view/*.html`, template funcs `jsAsset` / `cssAsset` |
-| `web_static.go` | `//go:embed all:web/dist`, `<entry>-<hash>.<ext>` matching, `/static/` handler |
+| `web_tmpl.go` | `//go:embed web/view/*.html`, template func `asset` |
+| `web_static.go` | `//go:embed all:web/dist`, `<entry>-<hash>.<ext>` matching, `/static/` handler, `ASSET_CDN_URL` prefix |
 | `web/build.ts` | esbuild: hashed IIFEs and Tailwind CSS in `dist/`. Bun only runs it |
 | `web/src/entries/` | One file per bundle: page entries plus `main.css` (Tailwind v4) |
 | `web/src/components/` | Preact islands imported by a page entry |
@@ -31,6 +32,19 @@ Retro on the server, modern in the build:
 # terminal 2: run the server
 go run .
 ```
+
+## Configuration
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `RETROGO_LISTEN` | `:8080` | Listen address (`-listen` overrides the environment) |
+| `ASSET_CDN_URL` | empty | Base URL prefixed onto static asset URLs. Empty serves `/static/` from this process |
+
+```bash
+ASSET_CDN_URL=https://cdn.example.com go run .
+```
+
+`https://cdn.example.com` and `https://cdn.example.com/` both produce `https://cdn.example.com/static/<file>`. A path on the base is kept (`https://cdn.example.com/assets/` → `https://cdn.example.com/assets/static/<file>`). The process still serves `GET /static/` so an origin-pull CDN can fetch the files. `script-src`, `style-src`, and `img-src` allow the CDN origin while the variable is set.
 
 ## Build
 
@@ -66,7 +80,7 @@ The runner builds the frontend with Bun and the binary with Go, then the `Docker
 ## Adding a page
 
 1. Add a route in `server.go`, e.g. `mux.HandleFunc("GET /about", s.handleAbout)`.
-2. Add a view `web/view/about.html` with `{{template "head" .}}` and `<script src="{{jsAsset "about"}}" defer></script>`.
+2. Add a view `web/view/about.html` with `{{template "head" .}}` and `<script src="{{asset "about.js"}}" defer></script>`.
 3. Add an entry `web/src/entries/about.ts`.
 4. `bun run build` — the new `about-<hash>.js` is picked up automatically.
 
