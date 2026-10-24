@@ -8,12 +8,12 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@iconify-json/lucide": "^1.2.137",
+    "@iconify-json/lucide": "^1.2.147",
     "@iconify/tailwind4": "^1.2.3",
     "@tailwindcss/postcss": "^4.3.3",
     "esbuild": "^0.28.2",
-    "postcss": "^8.5.28",
-    "preact": "^11.0.0",
+    "postcss": "^8.5.31",
+    "preact": "^11.0.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2"
   }
