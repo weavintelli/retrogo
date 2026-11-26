@@ -8,6 +8,7 @@ Retro on the server, modern in the build:
 - **esbuild multi-entry build** — every `.ts` / `.tsx` / `.css` file in `web/src/entries/` is bundled by `web/build.ts` into `web/dist/<name>-<hash>.<ext>`. Script entries are minified IIFEs. `main.css` is compiled by the official Tailwind v4 PostCSS plugin, including build-time lucide icons via `@iconify/tailwind4`. Interactive pieces are Preact islands mounted into the Go templates. Bun installs dependencies and runs the script.
 - **Copied static files** — every file in `web/src/assets/` (images, `.asc`, fonts, and any other extension) is an esbuild entry with the `copy` loader. esbuild does not parse or bundle it. The output uses the same `entryNames` pattern as the JS and CSS bundles, `web/dist/<name>-<hash>.<ext>`. `<name>` drops only the last extension, so `hero.2x.webp` becomes `hero.2x-<hash>.webp`. Dotfiles and nested directories are left out; `/static/` serves a flat directory.
 - **`html/template` views** — embedded with `//go:embed`, referencing files by source name and extension: `{{asset "main.css"}}`, `{{asset "home.js"}}`, `{{asset "logo.png"}}`, `{{asset "file.asc"}}`. Hash resolution happens in `web_static.go`. A missing file still renders `/static/<name>.<ext>` and 404s until the build has copied or bundled it.
+- **Server-rendered i18n** — Chinese (`zh-CN`) and English (`en`) catalogs behind the template `{{.T "key"}}` helper. Language selection follows `?lang=` → cookie → `Accept-Language` → Chinese, restricted to an allowlist. A valid query preference is persisted in a one-year cookie and removed from the URL with a redirect. Messages fall back per key to English.
 - **Immutable static serving** — `web/dist` is embedded (`//go:embed all:web/dist`) and served at `GET /static/` with `Cache-Control: public, max-age=31536000, immutable`, so hashed assets are cached forever and new builds get new URLs.
 - **Optional CDN prefix** — set `ASSET_CDN_URL` to a base URL and `{{asset}}` emits that base plus `/static/<file>`. Unset or empty keeps same-origin `/static/` URLs.
 
@@ -17,6 +18,8 @@ Retro on the server, modern in the build:
 |---|---|
 | `main.go` | Flags (`-listen` / `LISTEN`, default `:8080`), `ASSET_CDN_URL`, graceful shutdown |
 | `server.go` | `http.ServeMux` with method+path patterns, security headers, page handlers |
+| `i18n.go` | Locale allowlist, language resolution/persistence, per-message fallback, `pageData.T` |
+| `i18n_catalog.go` | Plain-text Chinese and English UI catalogs |
 | `web_tmpl.go` | `//go:embed web/view/*.html`, template func `asset` |
 | `web_static.go` | `//go:embed all:web/dist`, `<name>-<hash>.<ext>` matching, `/static/` handler, `ASSET_CDN_URL` prefix |
 | `web/build.ts` | esbuild: hashed bundles, and `copy` entries from `src/assets`. Bun only runs it |
@@ -48,6 +51,14 @@ ASSET_CDN_URL=https://cdn.example.com go run .
 
 `https://cdn.example.com` and `https://cdn.example.com/` both produce `https://cdn.example.com/static/<file>`. A path on the base is kept (`https://cdn.example.com/assets/` → `https://cdn.example.com/assets/static/<file>`). The process still serves `GET /static/` so an origin-pull CDN can fetch the files. `script-src`, `style-src`, and `img-src` allow the CDN origin while the variable is set.
 
+## Internationalization
+
+Pages keep one URL and render from `localizedPage`, which supplies `.Lang`, `.Languages`, and the `.T` message helper. The language links preserve the current path and unrelated query parameters. Selecting `?lang=en` or `?lang=zh` sets an `HttpOnly`, `SameSite=Lax` cookie and redirects to the clean URL; static files and `/healthz` are excluded. Invalid or unsupported values are ignored. `Secure` is enabled for HTTPS requests (including `X-Forwarded-Proto: https`).
+
+`Accept-Language` supports regional tags such as `en-US` and `zh-Hans`, positive q-values, and header-order tie breaking. Request parsing only returns locales in `supportedLocales`, so arbitrary header, cookie, or query text is never emitted into `<html lang>`.
+
+Add or update user-visible copy in both maps in `i18n_catalog.go`, then reference it with `{{.T "page.key"}}`. Lookup tries the selected locale and then English; empty or absent messages continue down that chain, and a completely missing key renders `[missing:page.key]`. `TestCatalogCompleteness` checks zh/en key parity and every literal template reference. To add another locale, register its metadata in `supportedLocales`, add its catalog, and register its fallback in `languageFallbacks`; English is always the final fallback. Preact islands can receive the same translated strings through escaped `data-*` attributes, as `Counter` demonstrates.
+
 ## Build
 
 ```bash
@@ -74,10 +85,11 @@ The runner builds the frontend with Bun and the binary with Go, then the `Docker
 
 ## Adding a page
 
-1. Add a route in `server.go`, e.g. `mux.HandleFunc("GET /about", s.handleAbout)`.
-2. Add a view `web/view/about.html` with `{{template "head" .}}` and `<script src="{{asset "about.js"}}" defer></script>`.
-3. Add an entry `web/src/entries/about.ts`.
-4. `bun run build` — the new `about-<hash>.js` is picked up automatically.
+1. Add a route in `server.go`, e.g. `mux.HandleFunc("GET /about", s.handleAbout)`, and render `localizedPage(r, "about")`.
+2. Add a view `web/view/about.html` with `<html lang="{{.Lang}}">`, `{{template "head" .}}`, translated `{{.T "about.key"}}` copy, and `<script src="{{asset "about.js"}}" defer></script>`.
+3. Add the referenced keys to both catalogs in `i18n_catalog.go`.
+4. Add an entry `web/src/entries/about.ts`.
+5. `bun run build` — the new `about-<hash>.js` is picked up automatically.
 
 ## Adding a static file
 

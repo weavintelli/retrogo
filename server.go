@@ -9,8 +9,10 @@ import (
 )
 
 type pageData struct {
-	Nav  string
-	Time string
+	Nav       string
+	Time      string
+	Lang      string
+	Languages []languageOption
 }
 
 type Server struct{}
@@ -25,7 +27,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleHome)
 	mux.HandleFunc("GET /about", s.handleAbout)
 	mux.Handle("GET /static/", staticHandler())
-	return s.withSecurityHeaders(mux)
+	return s.withSecurityHeaders(s.withLanguage(mux))
 }
 
 func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
@@ -64,15 +66,14 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-func (s *Server) handleHome(w http.ResponseWriter, _ *http.Request) {
-	s.render(w, "home.html", pageData{
-		Nav:  "home",
-		Time: time.Now().Format(time.DateTime),
-	})
+func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
+	data := localizedPage(r, "home")
+	data.Time = time.Now().Format(time.DateTime)
+	s.render(w, "home.html", data)
 }
 
-func (s *Server) handleAbout(w http.ResponseWriter, _ *http.Request) {
-	s.render(w, "about.html", pageData{Nav: "about"})
+func (s *Server) handleAbout(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "about.html", localizedPage(r, "about"))
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {

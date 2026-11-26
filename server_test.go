@@ -22,7 +22,9 @@ func TestPages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.AddCookie(&http.Cookie{Name: languageCookieName, Value: "en"})
+			h.ServeHTTP(rec, req)
 			require.Equal(t, http.StatusOK, rec.Code)
 			body := rec.Body.String()
 			for _, want := range tt.want {
