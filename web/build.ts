@@ -8,7 +8,7 @@
 //   bun run build.ts           production build (minified)
 //   bun run build.ts --watch   rebuild on change
 
-import { readdir, readFile, rm } from "node:fs/promises";
+import { readdir, readFile, realpath, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import * as esbuild from "esbuild";
 import postcss from "postcss";
@@ -110,6 +110,8 @@ export function staticAssetPlugin(options: {
   assetPaths: readonly string[];
   bundleNames: readonly string[];
 }): esbuild.Plugin {
+  // esbuild reports real paths; resolve symlinks (e.g. /var on macOS) so
+  // onLoad/onEnd path comparisons match.
   const wanted = new Set(options.assetPaths.map((file) => resolve(file)));
   const names = options.assetPaths.map((file) => basename(file));
   return {
@@ -118,6 +120,11 @@ export function staticAssetPlugin(options: {
       build.onStart(async () => {
         assertNoAssetCollision(names, options.bundleNames);
         await cleanOutput(options.distDir);
+        const paths = await Promise.all(
+          options.assetPaths.map((file) => realpath(file).catch(() => resolve(file))),
+        );
+        wanted.clear();
+        for (const file of paths) wanted.add(file);
       });
       build.onLoad({ filter: /.*/ }, async (args) => {
         if (!wanted.has(args.path)) return undefined;
